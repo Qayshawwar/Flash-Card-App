@@ -4,3 +4,4 @@ Web application deigned for students to be able to create flash cards to help th
 Memebers
 - Srinidhi Sivakaminathan
 - Qays Hawwar
+- Vitalii Besliubniak
