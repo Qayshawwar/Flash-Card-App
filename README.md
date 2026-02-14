@@ -5,3 +5,4 @@ Memebers
 - Srinidhi Sivakaminathan
 - Qays Hawwar
 - Vitalii Besliubniak
+- Halema Diab
