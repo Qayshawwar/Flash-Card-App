@@ -6,3 +6,4 @@ Members:
 - Qays Hawwar
 - Vitalii Besliubniak
 - Halema Diab
+- Aaliyan Siddiqui
