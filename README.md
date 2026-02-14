@@ -7,3 +7,4 @@ Members:
 - Vitalii Besliubniak
 - Halema Diab
 - Aaliyan Siddiqui
+- halema
