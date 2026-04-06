@@ -1,12 +1,14 @@
 import FlashcardRepository from '../repositories/FlashcardRepository';
 import CollectionRepository from '../repositories/CollectionRepository';
+import Flashcard, { FlashcardCreationAttributes, FlashcardUpdateAttributes } from '../models/Flashcard';
+import { UserFlashcardProgressUpdateAttributes } from '../models/UserFlashcardProgress';
 
 // Business logic for individual flashcards
-// FR-31: create manually; 
-// FR-08: save; 
-// FR-03: duplicate; 
+// FR-31: create manually;
+// FR-08: save;
+// FR-03: duplicate;
 // FR-11: flag as difficult
-// FR-02: search; 
+// FR-02: search;
 // FR-06: flip (handled client-side, data served here)
 
 class FlashcardService {
@@ -23,35 +25,39 @@ class FlashcardService {
         throw new Error('Not implemented');
     }
 
-    async getFlagged() {
+    async getAllByCollection(collectionID: number): Promise<Flashcard[]> {
         throw new Error('Not implemented');
     }
 
-    async search() {
+    async getFlagged(userID: number, collectionID: number): Promise<Flashcard[]> {
         throw new Error('Not implemented');
     }
 
-    async create() {
+    async search(collectionID: number, keyword: string): Promise<Flashcard[]> {
         throw new Error('Not implemented');
     }
 
-    async update() {
+    async create(data: FlashcardCreationAttributes): Promise<Flashcard> {
         throw new Error('Not implemented');
     }
 
-    async duplicate() {
+    async update(flashcardID: number, data: FlashcardUpdateAttributes): Promise<void> {
         throw new Error('Not implemented');
     }
 
-    async toggleFlag() {
+    async duplicate(flashcardID: number): Promise<Flashcard> {
         throw new Error('Not implemented');
     }
 
-    async updateProgress() {
+    async toggleFlag(userID: number, flashcardID: number): Promise<void> {
         throw new Error('Not implemented');
     }
 
-    async delete() {
+    async updateProgress(userID: number, flashcardID: number, data: UserFlashcardProgressUpdateAttributes): Promise<void> {
+        throw new Error('Not implemented');
+    }
+
+    async delete(flashcardID: number): Promise<void> {
         throw new Error('Not implemented');
     }
 }
