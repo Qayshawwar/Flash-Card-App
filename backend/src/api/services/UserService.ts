@@ -1,5 +1,5 @@
 import UserRepository from '../repositories/UserRepository';
-import { UserOutput } from '../models/User';
+import { UserCreationAttributes, UserOutput } from '../models/User';
 import { UserSettingsPreferencesUpdateAttributes } from '../models/UserSettingsPreferences';
 
 // Business logic for user profile management
@@ -12,7 +12,7 @@ class UserService {
         throw new Error('Not implemented');
     }
 
-    async updateProfile(userID: number, data: { username?: string; email?: string }): Promise<UserOutput> {
+    async updateProfile(userID: number, data: UserCreationAttributes): Promise<UserOutput> {
         throw new Error('Not implemented');
     }
 
