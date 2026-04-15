@@ -43,10 +43,9 @@ class UserController {
     async deleteAccount(req: Request, res: Response, next: NextFunction) {
         try {
             const userID = (req as any).userdata?.userID;
-            const confirmation = req.body?.confirmation ?? 'Confirm';
 
-            // FR-09: delete account flow supports confirm/cancel/dismiss.
-            const result = await UserService.deleteAccount(userID, confirmation);
+            // FR-09: frontend confirms action; backend executes deletion.
+            const result = await UserService.deleteAccount(userID);
             res.status(200).json(result);
         } catch (err) {
             next(err);

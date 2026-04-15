@@ -1,6 +1,11 @@
 import Collection, { CollectionCreationAttributes, CollectionUpdateAttributes } from '../models/Collection';
 import CollectionRepository from '../repositories/CollectionRepository';
 import { Express } from 'express';
+import {
+    AppError,
+    CollectionNotFoundError,
+    ValidationError,
+} from '../../errors';
 
 export interface ImportResult {
     count: number;
@@ -19,8 +24,6 @@ export interface ImportResult {
 // FR-22: notify if file type is not supported;
 // FR-23: validate file content format
 
-export type CollectionActionConfirmation = 'Confirm' | 'Cancel' | 'Dismiss';
-
 export interface ShareCollectionResult {
     shared: boolean;
     message: string;
@@ -28,61 +31,73 @@ export interface ShareCollectionResult {
 }
 
 class CollectionService {
+    // Centralized collection existence check used by authz helpers.
+    private async getCollectionOrThrow(collectionID: number): Promise<Collection> {
+        const collection = await CollectionRepository.findCollectionById(collectionID);
+        if (!collection) {
+            throw new CollectionNotFoundError();
+        }
+        return collection;
+    }
+
+    private async ensureCanReadCollection(userID: number, collectionID: number): Promise<Collection> {
+        const collection = await this.getCollectionOrThrow(collectionID);
+        if (collection.visibility !== 'public' && collection.userID !== userID) {
+            throw new AppError('You can only access public collections or your own collections.', 403);
+        }
+        return collection;
+    }
+
+    private async ensureOwnsCollection(userID: number, collectionID: number): Promise<Collection> {
+        const collection = await this.getCollectionOrThrow(collectionID);
+        if (collection.userID !== userID) {
+            throw new AppError('You can only modify collections you own.', 403);
+        }
+        return collection;
+    }
+
     async getAllCollectionsByUser(userID: number): Promise<Collection[]> {
-        throw new Error('Not implemented');
+        // FR-07: list collections for authenticated user.
+        return CollectionRepository.findAllCollectionsByUser(userID);
     }
 
     async create(data: CollectionCreationAttributes): Promise<Collection> {
-        // 1. Call repo.createCollection(data)
-        // 2. Return created collection
-        throw new Error('Not implemented');
+        // FR-12: create new collection.
+        if (!data.collectionName?.trim()) {
+            throw new ValidationError('Collection name is required.');
+        }
+
+        return CollectionRepository.createCollection({
+            ...data,
+            collectionName: data.collectionName.trim(),
+        });
     }
 
-    async rename(collectionID: number, collectionName: string): Promise<void> {
-        throw new Error('Not implemented');
+    async rename(collectionID: number, collectionName: string, userID: number): Promise<void> {
+        await this.ensureOwnsCollection(userID, collectionID);
+
+        // FR-18: rename collection.
+        if (!collectionName?.trim()) {
+            throw new ValidationError('Collection name is required.');
+        }
+
+        await CollectionRepository.updateCollection(collectionID, { collectionName: collectionName.trim() });
     }
 
-    async update(collectionID: number, data: CollectionUpdateAttributes): Promise<void> {
-        throw new Error('Not implemented');
+    async update(collectionID: number, data: CollectionUpdateAttributes, userID: number): Promise<void> {
+        await this.ensureOwnsCollection(userID, collectionID);
+        await CollectionRepository.updateCollection(collectionID, data);
     }
 
     async delete(userID: number, collectionID: number): Promise<void> {
-        // 1. Call repo.findCollectionById(collectionID), throw 404 if not found
-        // 2. Verify collection.userID === userID, throw 403 if not owner
-        // 3. Call repo.deleteCollectionById(collectionID) — cascades to Flashcard, StudySession
-        throw new Error('Not implemented');
+        // FR-13: owner-only collection deletion.
+        await this.ensureOwnsCollection(userID, collectionID);
+        await CollectionRepository.deleteCollectionById(collectionID);
     }
 
-    async share(
-        userID: number,
-        collectionID: number,
-        confirmation: CollectionActionConfirmation
-    ): Promise<ShareCollectionResult> {
-        if (confirmation === 'Cancel') {
-            return {
-                shared: false,
-                message: 'Collection sharing canceled.',
-                collection: null,
-            };
-        }
-
-        if (confirmation === 'Dismiss') {
-            return {
-                shared: false,
-                message: 'Collection sharing dismissed.',
-                collection: null,
-            };
-        }
-
-        const collection = await CollectionRepository.findCollectionById(collectionID);
-
-        if (!collection) {
-            throw new Error('Collection not found.');
-        }
-
-        if (collection.userID !== userID) {
-            throw new Error('You can only share collections you own.');
-        }
+    async share(userID: number, collectionID: number): Promise<ShareCollectionResult> {
+        // FR-04: frontend confirms; backend performs owner-only share action.
+        const collection = await this.ensureOwnsCollection(userID, collectionID);
 
         if (collection.visibility !== 'public') {
             await CollectionRepository.updateCollection(collectionID, { visibility: 'public' });
@@ -98,29 +113,13 @@ class CollectionService {
 
     async importFromFile(
         collectionId: number,
-        file: Express.Multer.File | undefined
+        file: Express.Multer.File | undefined,
+        userID?: number
     ): Promise<ImportResult> {
-        // 1. Validate file is provided (throw NoFileSelectedError if undefined)
-        // 2. Check file size ≤ 50 MB (throw FileTooLargeError if exceeded)
-        // 3. Check file content is non-empty / non-whitespace (throw EmptyFileError)
-        // 4. Look up file.mimetype in a PARSERS map (Map<mimetype, extractFn>).
-        //    Currently supported: 'text/plain'. Throw UnsupportedFileFormatError if not found.
-        //    To add a new format: add one entry to PARSERS and one extractFn — nothing else changes.
-        //    Note: 'application/pdf' is export-only and must NOT be added to PARSERS.
-        // 5. Reject files with null bytes / control characters (throw CorruptedFileError)
-        // 6. Run the matched extractFn to get plain text, then parse Q/A pairs
-        //    (regex: /Q:\s*(.+?)\s*A:\s*(.+?)(?=\s*Q:|$)/gis)
-        // 7. If no pairs found, throw InvalidFlashcardFormatError
-        // 8. Call FlashcardService.createBulk(collectionId, pairs) — delegates flashcard creation to FlashcardService
-        // 9. Return { count, message: `${count} flashcard(s) successfully imported.` }
         throw new Error('Not implemented');
     }
 
-    async exportAsPdf(collectionId: number): Promise<Buffer> {
-        // 1. Call repo.findCollectionById(collectionId), throw 404 if not found
-        // 2. Fetch all flashcards via FlashcardRepository.findAllFlashcardsByCollection
-        // 3. Generate PDF buffer using a PDF library (e.g. pdfkit)
-        // 4. Return the buffer
+    async exportAsPdf(collectionId: number, userID?: number): Promise<Buffer> {
         throw new Error('Not implemented');
     }
 }
