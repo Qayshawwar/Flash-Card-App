@@ -1,14 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import CollectionService from '../services/CollectionService';
 
-// Handles HTTP for: /collections and /collections/:id
+// Handles HTTP for: /collections and /collections/:collectionId
 // Use Cases 3 (create), 5 (delete), 8 (rename), 10 (import), 11 (export), 16 (share)
 
 class CollectionController {
     async getAll(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const collections = await CollectionService.getAllCollectionsByUser(userID);
+            const collections = await CollectionService.getAllCollectionsByUser(req.userdata!.userID);
             res.status(200).json(collections);
         } catch (err) {
             next(err);
@@ -17,12 +16,11 @@ class CollectionController {
 
     async create(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
             const { collectionName, description, visibility } = req.body;
 
             // FR-12: create collection in authenticated user's scope.
             const collection = await CollectionService.create({
-                userID,
+                userID: req.userdata!.userID,
                 collectionName,
                 description,
                 visibility,
@@ -36,11 +34,7 @@ class CollectionController {
 
     async rename(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const collectionID = Number(req.params.id);
-            const { collectionName } = req.body;
-
-            await CollectionService.rename(collectionID, collectionName, userID);
+            await CollectionService.rename(req.userdata!.userID, req.collection!, req.body.collectionName);
             res.status(204).send();
         } catch (err) {
             next(err);
@@ -49,10 +43,7 @@ class CollectionController {
 
     async delete(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const collectionID = Number(req.params.id);
-
-            await CollectionService.delete(userID, collectionID);
+            await CollectionService.delete(req.userdata!.userID, req.collection!);
             res.status(204).send();
         } catch (err) {
             next(err);
@@ -61,11 +52,8 @@ class CollectionController {
 
     async share(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const collectionID = Number(req.params.id);
-
             // FR-04: frontend confirms action; backend executes share.
-            const result = await CollectionService.share(userID, collectionID);
+            const result = await CollectionService.share(req.userdata!.userID, req.collection!);
             res.status(200).json(result);
         } catch (err) {
             next(err);
@@ -73,11 +61,24 @@ class CollectionController {
     }
 
     async importFile(req: Request, res: Response, next: NextFunction) {
-        next(new Error('Not implemented'));
+        try {
+            const file = (req as any).file as Express.Multer.File | undefined;
+            const result = await CollectionService.importFromFile(req.userdata!.userID, req.collection!, file);
+            res.status(200).json(result);
+        } catch (err) {
+            next(err);
+        }
     }
 
     async exportPdf(req: Request, res: Response, next: NextFunction) {
-        next(new Error('Not implemented'));
+        try {
+            const pdfBuffer = await CollectionService.exportAsPdf(req.userdata!.userID, req.collection!);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="${req.collection!.collectionName}.pdf"`);
+            res.status(200).send(pdfBuffer);
+        } catch (err) {
+            next(err);
+        }
     }
 }
 
