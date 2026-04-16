@@ -47,9 +47,6 @@ class FlashcardController {
     async update(req: Request, res: Response, next: NextFunction) {
         try {
             const flashcardID = Number(req.params.flashcardId);
-            if (!Number.isFinite(flashcardID)) {
-                throw new Error('flashcardId is required.');
-            }
             await FlashcardService.update(req.userdata!.userID, req.collection!, flashcardID, req.body);
             res.status(204).send();
         } catch (err) {
@@ -60,9 +57,6 @@ class FlashcardController {
     async duplicate(req: Request, res: Response, next: NextFunction) {
         try {
             const flashcardID = Number(req.params.flashcardId);
-            if (!Number.isFinite(flashcardID)) {
-                throw new Error('flashcardId is required.');
-            }
             const duplicated = await FlashcardService.duplicate(req.userdata!.userID, req.collection!, flashcardID);
             res.status(201).json(duplicated);
         } catch (err) {
@@ -73,9 +67,6 @@ class FlashcardController {
     async toggleFlag(req: Request, res: Response, next: NextFunction) {
         try {
             const flashcardID = Number(req.params.flashcardId);
-            if (!Number.isFinite(flashcardID)) {
-                throw new Error('flashcardId is required.');
-            }
             await FlashcardService.toggleFlag(req.userdata!.userID, req.collection!, flashcardID);
             res.status(204).send();
         } catch (err) {
@@ -86,9 +77,6 @@ class FlashcardController {
     async delete(req: Request, res: Response, next: NextFunction) {
         try {
             const flashcardID = Number(req.params.flashcardId);
-            if (!Number.isFinite(flashcardID)) {
-                throw new Error('flashcardId is required.');
-            }
             await FlashcardService.delete(req.userdata!.userID, req.collection!, flashcardID);
             res.status(204).send();
         } catch (err) {

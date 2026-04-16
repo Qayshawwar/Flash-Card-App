@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 
 import Collection from '../models/Collection';
-import { CollectionNotFoundError, ForbiddenError } from '../../errors';
+import { BadRequestError, CollectionNotFoundError, ForbiddenError } from '../../errors';
 
 // UC-3/5/8/10/11/16: Gate access to a specific collection.
 // A collection is accessible when the requesting user is its owner OR it is public.
@@ -22,7 +22,7 @@ class CollectionAccessMiddleware {
 
         const collectionId = parseInt(String(rawId), 10);
         if (isNaN(collectionId)) {
-            return next(new CollectionNotFoundError());
+            return next(new BadRequestError('collectionId must be a positive integer.'));
         }
 
         try {

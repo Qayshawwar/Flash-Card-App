@@ -42,7 +42,7 @@ import bcrypt from 'bcrypt';
 
 import authService from '../../api/services/AuthService';
 import userService from '../../api/services/UserService';
-import { ConflictError, UnauthorizedError, ValidationError } from '../../errors';
+import { ConflictError, UnauthorizedError } from '../../errors';
 import { MAX_FAILED_LOGIN_ATTEMPTS, ACCOUNT_LOCKOUT_DURATION_MS } from '../../constants';
 
 const mockFindById             = userService.findById             as jest.Mock;
@@ -151,47 +151,8 @@ describe('AuthService — register', () => {
         expect(mockUserServiceCreate).not.toHaveBeenCalled();
     });
 
-    /**
-     * TC-AUTH-SVC-F-003
-     * FR-27
-     * Password is too short (fewer than 12 characters).
-     * Expected: throws a validation error before any DB work is done.
-     */
-    it('TC-AUTH-SVC-F-003: password too short (< 12 chars) — throws ValidationError', async () => {
-        const result = authService.register({ ...VALID_REGISTER_DATA, password: 'SecureP1' }); // 8 chars — below 12
-
-        await expect(result).rejects.toThrow(ValidationError);
-        expect(mockUserServiceCreate).not.toHaveBeenCalled();
-        expect(mockBcryptHash).not.toHaveBeenCalled();
-    });
-
-    /**
-     * TC-AUTH-SVC-F-004
-     * FR-27
-     * Password is 12+ characters but fails complexity rules (no uppercase, no number).
-     * Expected: throws a validation error before any DB work.
-     */
-    it('TC-AUTH-SVC-F-004: password lacks complexity (no uppercase, no number) — throws ValidationError', async () => {
-        const result = authService.register({ ...VALID_REGISTER_DATA, password: 'alllowercaseonly' }); // 16 chars, no uppercase/digit
-
-        await expect(result).rejects.toThrow(ValidationError);
-        expect(mockUserServiceCreate).not.toHaveBeenCalled();
-        expect(mockBcryptHash).not.toHaveBeenCalled();
-    });
-
-    /**
-     * TC-AUTH-SVC-F-019
-     * UC2-F-4
-     * Username is empty — must be rejected with a validation error before any DB work.
-     * Expected: ValidationError thrown; no DB calls made.
-     */
-    it('TC-AUTH-SVC-F-019: empty username — throws ValidationError (UC2-F-4)', async () => {
-        const result = authService.register({ ...VALID_REGISTER_DATA, username: '' });
-
-        await expect(result).rejects.toThrow(ValidationError);
-        expect(mockUserServiceCreate).not.toHaveBeenCalled();
-        expect(mockBcryptHash).not.toHaveBeenCalled();
-    });
+    // TC-AUTH-SVC-F-003, F-004, F-019: password complexity and username presence are
+    // enforced by express-validator chains on POST /auth/register — not the service layer.
 
     /**
      * TC-AUTH-SVC-F-020
@@ -208,24 +169,7 @@ describe('AuthService — register', () => {
         expect(mockUserServiceCreate).not.toHaveBeenCalled();
     });
 
-    /**
-     * TC-AUTH-SVC-F-004b
-     * FR-28
-     * Email address is syntactically invalid (missing @, missing domain, etc.).
-     * Expected: ValidationError thrown before any DB work is done.
-     */
-    it('TC-AUTH-SVC-F-004b: invalid email format — throws ValidationError', async () => {
-        const invalidEmails = ['notanemail', 'missing@', '@nodomain.com', 'spaces in@email.com'];
-
-        for (const email of invalidEmails) {
-            const result = authService.register({ ...VALID_REGISTER_DATA, email });
-            await expect(result).rejects.toThrow(ValidationError);
-        }
-
-        expect(mockFindByEmail).not.toHaveBeenCalled();
-        expect(mockUserServiceCreate).not.toHaveBeenCalled();
-        expect(mockBcryptHash).not.toHaveBeenCalled();
-    });
+    // TC-AUTH-SVC-F-004b: email format is enforced by express-validator on POST /auth/register — not the service layer.
 
 });
 
@@ -365,22 +309,7 @@ describe('AuthService — login', () => {
         );
     });
 
-    /**
-     * TC-AUTH-SVC-F-022
-     * UC1-F-4
-     * Credential or password field is empty — must be rejected with a validation
-     * error before any DB or bcrypt work is done.
-     * Expected: ValidationError thrown for empty credential and for empty password.
-     */
-    it('TC-AUTH-SVC-F-022: empty credential or password — throws ValidationError (UC1-F-4)', async () => {
-        await expect(authService.login({ credential: '', password: 'SecurePass1234' }))
-            .rejects.toThrow(ValidationError);
-        await expect(authService.login({ credential: 'john@example.com', password: '' }))
-            .rejects.toThrow(ValidationError);
-
-        expect(mockFindByEmail).not.toHaveBeenCalled();
-        expect(mockBcryptCompare).not.toHaveBeenCalled();
-    });
+    // TC-AUTH-SVC-F-022: credential/password presence is enforced by express-validator on POST /auth/login — not the service layer.
 
     /**
      * TC-AUTH-SVC-F-023

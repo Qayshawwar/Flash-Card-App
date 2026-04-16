@@ -23,7 +23,7 @@ jest.mock('../../api/models/Collection', () => ({
 import { Request, Response, NextFunction } from 'express';
 import CollectionAccessMiddleware from '../../api/middlewares/CollectionAccessMiddleware';
 import Collection from '../../api/models/Collection';
-import { CollectionNotFoundError, ForbiddenError } from '../../errors';
+import { BadRequestError, CollectionNotFoundError, ForbiddenError } from '../../errors';
 
 // Helpers
 
@@ -174,16 +174,16 @@ describe('CollectionAccessMiddleware — forCollection', () => {
     /**
      * TC-CAM-F-006
      * UC-3, UC-5, UC-8, UC-10, UC-11, UC-16
-     * Non-numeric :collectionId in the URL.
-     * Expected: next(CollectionNotFoundError) called, DB never queried.
+     * Non-numeric :collectionId in the URL — malformed input, not a missing resource.
+     * Expected: next(BadRequestError) called, DB never queried.
      */
-    it('TC-CAM-F-006: calls next with CollectionNotFoundError for a non-numeric collectionId', async () => {
+    it('TC-CAM-F-006: calls next with BadRequestError for a non-numeric collectionId', async () => {
         const req  = makeReq({ params: { collectionId: 'abc' }, userID: OWNER_ID });
         const next = makeNext();
 
         await CollectionAccessMiddleware.forCollection(req as Request, makeRes() as Response, next);
 
-        expect(next).toHaveBeenCalledWith(expect.any(CollectionNotFoundError));
+        expect(next).toHaveBeenCalledWith(expect.any(BadRequestError));
         expect(mockFindByPk).not.toHaveBeenCalled();
     });
 

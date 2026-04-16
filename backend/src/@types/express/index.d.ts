@@ -6,6 +6,7 @@ declare global {
         interface Request {
             userdata?: UserOutput;
             collection?: Collection;
+            file?: Multer.File;
         }
     }
 }

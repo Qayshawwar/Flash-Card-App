@@ -5,7 +5,7 @@ import UserService from './UserService';
 import AppConfig from '../../config/appConfig';
 import { MAX_FAILED_LOGIN_ATTEMPTS, ACCOUNT_LOCKOUT_DURATION_MS, DEFAULT_TOKEN_EXPIRES, REMEMBER_ME_EXPIRES } from '../../constants';
 import { UserSecurityStatusUpdateAttributes } from '../models/UserSecurityStatus';
-import { ConflictError, UnauthorizedError, ValidationError } from '../../errors';
+import { ConflictError, UnauthorizedError } from '../../errors';
 
 // Business logic for authentication:
 // FR-25: login with username/email;
@@ -15,38 +15,10 @@ import { ConflictError, UnauthorizedError, ValidationError } from '../../errors'
 // NFR-07/08/10
 
 const BCRYPT_ROUNDS = 12;
-const PASSWORD_MIN_LENGTH = 12;
 
 class AuthService {
 
-    // FR-28: validate email format before any DB work
-    private validateEmail(email: string): void {
-        // RFC-2822 simplified regex for basic email validation
-        const EMAIL_REGEX = /^[-A-Za-z0-9!#$%&'*+/=?^_`{|}~]+(?:\.[-A-Za-z0-9!#$%&'*+/=?^_`{|}~]+)*@(?:[A-Za-z0-9](?:[-A-Za-z0-9]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[-A-Za-z0-9]*[A-Za-z0-9])?$/;
-        if (!EMAIL_REGEX.test(email)) {
-            throw new ValidationError('Invalid email address.');
-        }
-    }
-
-    // FR-27: enforce password complexity before any DB work
-    private validatePassword(password: string): void {
-        if (password.length < PASSWORD_MIN_LENGTH) {
-            throw new ValidationError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters long.`);
-        }
-        if (!/[A-Z]/.test(password)) {
-            throw new ValidationError('Password must contain at least one uppercase letter.');
-        }
-        if (!/[0-9]/.test(password)) {
-            throw new ValidationError('Password must contain at least one number.');
-        }
-    }
-
     async register(data: { username: string; email: string; password: string }): Promise<{ token: string }> {
-        if (!data.username) {
-            throw new ValidationError('Username is required.');
-        }
-        this.validateEmail(data.email);
-        this.validatePassword(data.password);
 
         const existing = await UserService.findByEmail(data.email);
         if (existing) {
@@ -71,10 +43,6 @@ class AuthService {
     }
 
     async login(data: { credential: string; password: string; rememberMe?: boolean }): Promise<{ token: string }> {
-        if (!data.credential || !data.password) {
-            throw new ValidationError('Credential and password are required.');
-        }
-
         // FR-25: accept email or username as credential
         const isEmail = data.credential.includes('@');
         const user: any = isEmail
