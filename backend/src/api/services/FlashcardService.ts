@@ -2,7 +2,7 @@ import FlashcardRepository from '../repositories/FlashcardRepository';
 import Collection from '../models/Collection';
 import Flashcard, { FlashcardCreationAttributes, FlashcardUpdateAttributes } from '../models/Flashcard';
 import { UserFlashcardProgressUpdateAttributes } from '../models/UserFlashcardProgress';
-import { AppError, CollectionNotFoundError, ValidationError } from '../../errors';
+import { AppError, ForbiddenError, ValidationError } from '../../errors';
 
 // Business logic for individual flashcards
 // FR-31: create manually;
@@ -11,41 +11,21 @@ import { AppError, CollectionNotFoundError, ValidationError } from '../../errors
 // FR-11: flag as difficult
 // FR-02: search;
 // FR-06: flip (handled client-side, data served here)
+//
+// All public methods accept the pre-fetched Collection instance resolved by
+// CollectionAccessMiddleware so the collection is never re-fetched from the DB.
+// Access control (public vs. owner) is already verified by the middleware;
+// write operations additionally enforce ownership inline.
 
 class FlashcardService {
-    // Collection existence + visibility/ownership checks live here (service layer authz).
-    private async getCollectionOrThrow(collectionID: number): Promise<Collection> {
-        const collection = await Collection.findByPk(collectionID);
-        if (!collection) {
-            throw new CollectionNotFoundError();
-        }
-        return collection;
-    }
-
-    private async ensureCanReadCollection(userID: number, collectionID: number): Promise<Collection> {
-        const collection = await this.getCollectionOrThrow(collectionID);
-
-        // Read policy: public OR owner.
-        if (collection.visibility !== 'public' && collection.userID !== userID) {
-            throw new AppError('You can only access flashcards in public collections or your own collections.', 403);
-        }
-
-        return collection;
-    }
-
-    private async ensureOwnsCollection(userID: number, collectionID: number): Promise<Collection> {
-        const collection = await this.getCollectionOrThrow(collectionID);
-
-        // Write policy: owner-only.
+    private ensureOwns(userID: number, collection: Collection): void {
         if (collection.userID !== userID) {
-            throw new AppError('You can only modify flashcards in your own collections.', 403);
+            throw new ForbiddenError();
         }
-
-        return collection;
     }
 
     async createBulk(
-        collectionId: number,
+        collection: Collection,
         cards: Array<{ question: string; answer: string }>
     ): Promise<number> {
         let createdCount = 0;
@@ -60,7 +40,7 @@ class FlashcardService {
             }
 
             await FlashcardRepository.createFlashcard({
-                collectionID: collectionId,
+                collectionID: collection.collectionID,
                 question,
                 answer,
             });
@@ -70,86 +50,75 @@ class FlashcardService {
         return createdCount;
     }
 
-    async getAllByCollection(userID: number, collectionID: number): Promise<Flashcard[]> {
-        // FR-07: allow listing flashcards if collection is public or owned by user.
-        await this.ensureCanReadCollection(userID, collectionID);
-
-        return FlashcardRepository.findAllFlashcardsByCollection(collectionID);
+    async getAllByCollection(userID: number, collection: Collection): Promise<Flashcard[]> {
+        // Access already verified by middleware — fetch directly.
+        return FlashcardRepository.findAllFlashcardsByCollection(collection.collectionID);
     }
 
-    async getFlagged(userID: number, collectionID: number): Promise<Flashcard[]> {
-        await this.ensureCanReadCollection(userID, collectionID);
-
+    async getFlagged(userID: number, collection: Collection): Promise<Flashcard[]> {
         // FR-11: difficult flag is per-user, so query by user + collection.
-        return FlashcardRepository.findFlaggedByUserAndCollectionn(userID, collectionID);
+        return FlashcardRepository.findFlaggedByUserAndCollectionn(userID, collection.collectionID);
     }
 
-    async search(userID: number, collectionID: number, keyword: string): Promise<Flashcard[]> {
-        // FR-02: allow search if collection is public or owned by user.
-        await this.ensureCanReadCollection(userID, collectionID);
-
+    async search(userID: number, collection: Collection, keyword: string): Promise<Flashcard[]> {
         // FR-02: search in question/answer text.
         const trimmedKeyword = keyword.trim();
         if (!trimmedKeyword) {
             return [];
         }
 
-        return FlashcardRepository.searchFlashcardsByKeyword(collectionID, trimmedKeyword);
+        return FlashcardRepository.searchFlashcardsByKeyword(collection.collectionID, trimmedKeyword);
     }
 
-    async create(userID: number, data: FlashcardCreationAttributes): Promise<Flashcard> {
-        // FR-31: manual flashcard creation requires an existing collection.
-        await this.ensureOwnsCollection(userID, data.collectionID);
+    async create(userID: number, collection: Collection, data: Omit<FlashcardCreationAttributes, 'collectionID'>): Promise<Flashcard> {
+        // FR-31: manual flashcard creation requires ownership.
+        this.ensureOwns(userID, collection);
 
         if (!data.question?.trim() || !data.answer?.trim()) {
             throw new ValidationError('Question and answer are required.');
         }
 
         return FlashcardRepository.createFlashcard({
-            ...data,
+            collectionID: collection.collectionID,
             question: data.question.trim(),
             answer: data.answer.trim(),
         });
     }
 
-    async update(userID: number, flashcardID: number, data: FlashcardUpdateAttributes): Promise<void> {
+    async update(userID: number, collection: Collection, flashcardID: number, data: FlashcardUpdateAttributes): Promise<void> {
+        this.ensureOwns(userID, collection);
+
         const flashcard = await FlashcardRepository.findFlashcardById(flashcardID);
         if (!flashcard) {
             throw new AppError('Flashcard not found.', 404);
         }
-
-        // FR-08: only owner can update.
-        await this.ensureOwnsCollection(userID, flashcard.collectionID);
 
         // FR-08: persist flashcard updates.
         await FlashcardRepository.updateFlashcard(flashcardID, data);
     }
 
-    async duplicate(userID: number, flashcardID: number): Promise<Flashcard> {
+    async duplicate(userID: number, collection: Collection, flashcardID: number): Promise<Flashcard> {
+        this.ensureOwns(userID, collection);
+
         const flashcard = await FlashcardRepository.findFlashcardById(flashcardID);
         if (!flashcard) {
             throw new AppError('Flashcard not found.', 404);
         }
 
-        // FR-03: only owner can duplicate.
-        await this.ensureOwnsCollection(userID, flashcard.collectionID);
-
         // FR-03: duplicate a flashcard in the same collection.
         return FlashcardRepository.createFlashcard({
-            collectionID: flashcard.collectionID,
+            collectionID: collection.collectionID,
             question: flashcard.question,
             answer: flashcard.answer,
         });
     }
 
-    async toggleFlag(userID: number, flashcardID: number): Promise<void> {
+    async toggleFlag(userID: number, collection: Collection, flashcardID: number): Promise<void> {
+        // FR-11: flag is per-user; any collection member can flag (read access sufficient).
         const flashcard = await FlashcardRepository.findFlashcardById(flashcardID);
         if (!flashcard) {
             throw new AppError('Flashcard not found.', 404);
         }
-
-        // FR-11: only owner can modify difficult flags.
-        await this.ensureOwnsCollection(userID, flashcard.collectionID);
 
         // FR-11: toggle per-user difficult flag.
         const progress = await FlashcardRepository.createFlashcardProgress({
@@ -162,27 +131,25 @@ class FlashcardService {
         });
     }
 
-    async updateProgress(userID: number, flashcardID: number, data: UserFlashcardProgressUpdateAttributes): Promise<void> {
+    async updateProgress(userID: number, collection: Collection, flashcardID: number, data: UserFlashcardProgressUpdateAttributes): Promise<void> {
         const flashcard = await FlashcardRepository.findFlashcardById(flashcardID);
         if (!flashcard) {
             throw new AppError('Flashcard not found.', 404);
         }
 
-        await this.ensureOwnsCollection(userID, flashcard.collectionID);
-
         await FlashcardRepository.createFlashcardProgress({ userID, flashcardID });
         await FlashcardRepository.updateFlashcardProgress(userID, flashcardID, data);
     }
 
-    async delete(userID: number, flashcardID: number): Promise<void> {
+    async delete(userID: number, collection: Collection, flashcardID: number): Promise<void> {
+        this.ensureOwns(userID, collection);
+
         const flashcard = await FlashcardRepository.findFlashcardById(flashcardID);
         if (!flashcard) {
             throw new AppError('Flashcard not found.', 404);
         }
 
         // FR-13: only owner can delete.
-        await this.ensureOwnsCollection(userID, flashcard.collectionID);
-
         await FlashcardRepository.deleteFlashcardById(flashcardID);
     }
 }

@@ -4,7 +4,7 @@
  * These are specification (TDD) tests: they define the expected contract
  * for the PDF export feature. They will fail with "Not implemented" until
  * the service is fully implemented, at which point all should pass.
- *
+ * Author: Vitalii Belsiubniak
  */
 
 // Mocks (must appear before the module under test is imported)
@@ -53,32 +53,20 @@ jest.mock('pdfkit', () => {
 });
 
 import collectionService from '../../api/services/CollectionService';
-import CollectionRepository from '../../api/repositories/CollectionRepository';
 import flashcardService from '../../api/services/FlashcardService';
+import Collection from '../../api/models/Collection';
 
-import {
-    CollectionNotFoundError,
-    EmptyCollectionError,
-} from '../../errors';
+import { EmptyCollectionError } from '../../errors';
+
+// TC-UC11-F-003 (CollectionNotFoundError for non-existent ID) is enforced by
+// CollectionAccessMiddleware before the service is reached — not testable at the service level.
+// Covered by CollectionAccessMiddleware tests.
 
 // Helpers
 
-// Returns a minimal mock Collection-like object for findCollectionById to resolve with.
-function makeMockCollection(collectionID: number, collectionName = 'Default Collection') {
-    return {
-        collectionID,
-        userID: 42,
-        collectionName,
-        description: null,
-        visibility: 'private' as const,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-    };
-}
-
 // Returns a minimal mock Flashcard-like object.
 // question / answer default to standard ASCII text unless overridden
-// (used by TC-UC11-F-005 to inject special characters).
+// (used by TC-UC11-F-004 to inject special characters).
 function makeMockFlashcard(flashcardID: number, question = `Question ${flashcardID}?`, answer = `Answer ${flashcardID}.`) {
     return {
         flashcardID,
@@ -90,21 +78,29 @@ function makeMockFlashcard(flashcardID: number, question = `Question ${flashcard
     };
 }
 
-const COLLECTION_ID         = 1;
-const NONEXISTENT_ID        = 99999;
-const FIVE_MOCK_FLASHCARDS  = Array.from({ length: 5 }, (_, i) => makeMockFlashcard(i + 1));
+const OWNER_ID = 42;
+// Collection is pre-fetched by CollectionAccessMiddleware and passed directly into the service.
+// Tests that need different collection data spread over this base constant inline.
+const MOCK_COLLECTION = {
+    collectionID: 1,
+    userID: OWNER_ID,
+    collectionName: 'Default Collection',
+    description: null,
+    visibility: 'private' as const,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+} as unknown as Collection;
+const FIVE_MOCK_FLASHCARDS = Array.from({ length: 5 }, (_, i) => makeMockFlashcard(i + 1));
 
 // Test Suite
 describe('CollectionService — exportAsPdf', () => {
-    const mockFindCollectionById    = CollectionRepository.findCollectionById as jest.Mock;
-    const mockGetAllByCollection    = flashcardService.getAllByCollection as jest.Mock;
+    const mockGetAllByCollection = flashcardService.getAllByCollection as jest.Mock;
 
     beforeEach(() => {
         // Without clearing, the next test might still see calls from the previous one.
         jest.clearAllMocks();
 
-        // Defaults.
-        mockFindCollectionById.mockResolvedValue(makeMockCollection(COLLECTION_ID));
+        // Default.
         mockGetAllByCollection.mockResolvedValue(FIVE_MOCK_FLASHCARDS);
     });
 
@@ -117,20 +113,17 @@ describe('CollectionService — exportAsPdf', () => {
      * Expected: a non-empty Buffer is returned (the PDF bytes).
      */
     it('TC-UC11-F-001: returns a Buffer when exporting a valid collection with 5 flashcards', async () => {
-        // defines what happens when the service calls repo.findCollectionById and service.getAllByCollection.
-        // if we call mocked findCollectionById, it will resolve with a mock collection object.
-        mockFindCollectionById.mockResolvedValue(makeMockCollection(COLLECTION_ID, 'Biology 101'));
+        // Collection is passed in directly — no repo lookup happens in the service.
+        const collection = { ...MOCK_COLLECTION, collectionName: 'Biology 101' } as unknown as Collection;
         mockGetAllByCollection.mockResolvedValue(FIVE_MOCK_FLASHCARDS);
 
-        const result = await collectionService.exportAsPdf(COLLECTION_ID);
+        const result = await collectionService.exportAsPdf(OWNER_ID, collection);
 
         expect(Buffer.isBuffer(result)).toBe(true);
         expect(result.length).toBeGreaterThan(0);
-        // Service must look up the collection and its flashcards exactly once.
-        expect(mockFindCollectionById).toHaveBeenCalledTimes(1);
-        expect(mockFindCollectionById).toHaveBeenCalledWith(COLLECTION_ID);
+        // Service must fetch flashcards exactly once.
         expect(mockGetAllByCollection).toHaveBeenCalledTimes(1);
-        expect(mockGetAllByCollection).toHaveBeenCalledWith(COLLECTION_ID);
+        expect(mockGetAllByCollection).toHaveBeenCalledWith(OWNER_ID, collection);
     });
 
     /**
@@ -140,32 +133,13 @@ describe('CollectionService — exportAsPdf', () => {
      * Expected: EmptyCollectionError thrown before any PDF generation.
      */
     it('TC-UC11-F-002: throws EmptyCollectionError when the collection has 0 flashcards', async () => {
-        mockFindCollectionById.mockResolvedValue(makeMockCollection(COLLECTION_ID, 'Empty Set'));
+        const collection = { ...MOCK_COLLECTION, collectionName: 'Empty Set' } as unknown as Collection;
         mockGetAllByCollection.mockResolvedValue([]);
 
-        const result = collectionService.exportAsPdf(COLLECTION_ID);
+        const result = collectionService.exportAsPdf(OWNER_ID, collection);
 
         await expect(result).rejects.toThrow(EmptyCollectionError);
         await expect(result).rejects.toThrow('Cannot export an empty collection.');
-        // Collection lookup must still happen, but no PDF work should follow.
-        expect(mockFindCollectionById).toHaveBeenCalledWith(COLLECTION_ID);
-    });
-
-    /**
-     * TC-UC11-F-003
-     * FR-05
-     * User requests export for collection ID 99999, which does not exist.
-     * Expected: CollectionNotFoundError thrown; no flashcard lookup attempted.
-     */
-    it('TC-UC11-F-003: throws CollectionNotFoundError when the collection ID does not exist', async () => {
-        mockFindCollectionById.mockResolvedValue(null);
-
-        const result = collectionService.exportAsPdf(NONEXISTENT_ID);
-
-        await expect(result).rejects.toThrow(CollectionNotFoundError);
-        await expect(result).rejects.toThrow('Collection not found.');
-        // Must abort before fetching flashcards.
-        expect(mockGetAllByCollection).not.toHaveBeenCalled();
     });
 
     /**
@@ -183,17 +157,15 @@ describe('CollectionService — exportAsPdf', () => {
             makeMockFlashcard(2, 'こんにちは means what?', 'Hello in Japanese.'),
             makeMockFlashcard(3, 'Résumé contains which accent?', 'Acute accent (é).'),
         ];
-        mockFindCollectionById.mockResolvedValue(makeMockCollection(COLLECTION_ID, 'Special Chars'));
+        const collection = { ...MOCK_COLLECTION, collectionName: 'Special Chars' } as unknown as Collection;
         mockGetAllByCollection.mockResolvedValue(specialCards);
 
-        const result = await collectionService.exportAsPdf(COLLECTION_ID);
+        const result = await collectionService.exportAsPdf(OWNER_ID, collection);
 
         expect(Buffer.isBuffer(result)).toBe(true);
         expect(result.length).toBeGreaterThan(0);
-        expect(mockFindCollectionById).toHaveBeenCalledTimes(1);
-        expect(mockFindCollectionById).toHaveBeenCalledWith(COLLECTION_ID);
         expect(mockGetAllByCollection).toHaveBeenCalledTimes(1);
-        expect(mockGetAllByCollection).toHaveBeenCalledWith(COLLECTION_ID);
+        expect(mockGetAllByCollection).toHaveBeenCalledWith(OWNER_ID, collection);
     });
 
     // Non-functional test cases
@@ -216,7 +188,7 @@ describe('CollectionService — exportAsPdf', () => {
 
         const results = await Promise.all(
             Array.from({ length: concurrency }, () =>
-                collectionService.exportAsPdf(COLLECTION_ID)
+                collectionService.exportAsPdf(OWNER_ID, MOCK_COLLECTION)
             )
         );
 

@@ -1,6 +1,7 @@
 export { AppError } from './AppError';
 export { CollectionNotFoundError } from './CollectionNotFoundError';
 export { ConflictError } from './ConflictError';
+export { ForbiddenError } from './ForbiddenError';
 export { CorruptedFileError } from './CorruptedFileError';
 export { EmptyCollectionError } from './EmptyCollectionError';
 export { EmptyFileError } from './EmptyFileError';

@@ -35,11 +35,11 @@ class AuthMiddleware {
             }
 
             // FR-30: reject if account is currently locked
-            if ((user as any).lockoutUntil && (user as any).lockoutUntil > new Date()) {
+            if (user.lockoutUntil && user.lockoutUntil > new Date()) {
                 return next(new UnauthorizedError());
             }
 
-            (req as any).userdata = user;
+            req.userdata = user;
             next();
         } catch {
             next(new UnauthorizedError());

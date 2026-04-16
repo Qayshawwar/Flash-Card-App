@@ -1,19 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import FlashcardService from '../services/FlashcardService';
 
-// Handles HTTP for: /collections/:collectionId/flashcards and /flashcards/:id
+// Handles HTTP for: /api/v1/collections/:collectionId/flashcards[/:flashcardId]
 // Use Cases 4 (study/self-grade), 7 (difficult), 13 (search), 14 (create)
+// Collection access is guaranteed by CollectionAccessMiddleware on the parent router.
 
 class FlashcardController {
     async getAll(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const collectionID = Number(req.query.collectionId);
-            if (!Number.isFinite(collectionID)) {
-                throw new Error('collectionId query parameter is required.');
-            }
-
-            const flashcards = await FlashcardService.getAllByCollection(userID, collectionID);
+            const flashcards = await FlashcardService.getAllByCollection(req.userdata!.userID, req.collection!);
             res.status(200).json(flashcards);
         } catch (err) {
             next(err);
@@ -22,13 +17,7 @@ class FlashcardController {
 
     async getFlagged(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const collectionID = Number(req.query.collectionId);
-            if (!Number.isFinite(collectionID)) {
-                throw new Error('collectionId query parameter is required.');
-            }
-
-            const flashcards = await FlashcardService.getFlagged(userID, collectionID);
+            const flashcards = await FlashcardService.getFlagged(req.userdata!.userID, req.collection!);
             res.status(200).json(flashcards);
         } catch (err) {
             next(err);
@@ -37,14 +26,8 @@ class FlashcardController {
 
     async search(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const collectionID = Number(req.query.collectionId);
-            if (!Number.isFinite(collectionID)) {
-                throw new Error('collectionId query parameter is required.');
-            }
-
             const keyword = String(req.query.q ?? '');
-            const flashcards = await FlashcardService.search(userID, collectionID, keyword);
+            const flashcards = await FlashcardService.search(req.userdata!.userID, req.collection!, keyword);
             res.status(200).json(flashcards);
         } catch (err) {
             next(err);
@@ -53,14 +36,8 @@ class FlashcardController {
 
     async create(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const collectionID = Number(req.body.collectionID ?? req.body.collectionId);
-            if (!Number.isFinite(collectionID)) {
-                throw new Error('collectionID is required.');
-            }
-
             const { question, answer } = req.body;
-            const flashcard = await FlashcardService.create(userID, { collectionID, question, answer });
+            const flashcard = await FlashcardService.create(req.userdata!.userID, req.collection!, { question, answer });
             res.status(201).json(flashcard);
         } catch (err) {
             next(err);
@@ -69,9 +46,11 @@ class FlashcardController {
 
     async update(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const flashcardID = Number(req.params.id);
-            await FlashcardService.update(userID, flashcardID, req.body);
+            const flashcardID = Number(req.params.flashcardId);
+            if (!Number.isFinite(flashcardID)) {
+                throw new Error('flashcardId is required.');
+            }
+            await FlashcardService.update(req.userdata!.userID, req.collection!, flashcardID, req.body);
             res.status(204).send();
         } catch (err) {
             next(err);
@@ -80,20 +59,24 @@ class FlashcardController {
 
     async duplicate(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const flashcardID = Number(req.params.id);
-            const duplicated = await FlashcardService.duplicate(userID, flashcardID);
+            const flashcardID = Number(req.params.flashcardId);
+            if (!Number.isFinite(flashcardID)) {
+                throw new Error('flashcardId is required.');
+            }
+            const duplicated = await FlashcardService.duplicate(req.userdata!.userID, req.collection!, flashcardID);
             res.status(201).json(duplicated);
         } catch (err) {
             next(err);
         }
     }
 
-    async toggleFlag(req: Request, res: Response, next: NextFunction) { 
+    async toggleFlag(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const flashcardID = Number(req.params.id);
-            await FlashcardService.toggleFlag(userID, flashcardID);
+            const flashcardID = Number(req.params.flashcardId);
+            if (!Number.isFinite(flashcardID)) {
+                throw new Error('flashcardId is required.');
+            }
+            await FlashcardService.toggleFlag(req.userdata!.userID, req.collection!, flashcardID);
             res.status(204).send();
         } catch (err) {
             next(err);
@@ -102,9 +85,11 @@ class FlashcardController {
 
     async delete(req: Request, res: Response, next: NextFunction) {
         try {
-            const userID = (req as any).userdata?.userID;
-            const flashcardID = Number(req.params.id);
-            await FlashcardService.delete(userID, flashcardID);
+            const flashcardID = Number(req.params.flashcardId);
+            if (!Number.isFinite(flashcardID)) {
+                throw new Error('flashcardId is required.');
+            }
+            await FlashcardService.delete(req.userdata!.userID, req.collection!, flashcardID);
             res.status(204).send();
         } catch (err) {
             next(err);

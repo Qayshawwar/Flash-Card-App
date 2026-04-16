@@ -4,6 +4,7 @@ import FlashcardService from './FlashcardService';
 import { Express } from 'express';
 import {
     AppError,
+    ForbiddenError,
     ValidationError,
 } from '../../errors';
 import PDFDocument from 'pdfkit';
@@ -25,6 +26,12 @@ export interface ImportResult {
     message: string;
 }
 
+export interface ShareCollectionResult {
+    shared: boolean;
+    message: string;
+    collection: Collection | null;
+}
+
 // Business logic for flashcard collections
 // FR-01 (Use Case 10): import from file;
 // FR-04 (Use Case 16): share;
@@ -36,37 +43,16 @@ export interface ImportResult {
 // FR-18: rename;
 // FR-22: notify if file type is not supported;
 // FR-23: validate file content format
-
-export interface ShareCollectionResult {
-    shared: boolean;
-    message: string;
-    collection: Collection | null;
-}
+//
+// Methods that operate on a specific collection accept the pre-fetched Collection
+// instance from CollectionAccessMiddleware .
+// Ownership is still enforced inline for write operations.
 
 class CollectionService {
-    // Centralized collection existence check used by authz helpers.
-    private async getCollectionOrThrow(collectionID: number): Promise<Collection> {
-        const collection = await CollectionRepository.findCollectionById(collectionID);
-        if (!collection) {
-            throw new CollectionNotFoundError();
-        }
-        return collection;
-    }
-
-    private async ensureCanReadCollection(userID: number, collectionID: number): Promise<Collection> {
-        const collection = await this.getCollectionOrThrow(collectionID);
-        if (collection.visibility !== 'public' && collection.userID !== userID) {
-            throw new AppError('You can only access public collections or your own collections.', 403);
-        }
-        return collection;
-    }
-
-    private async ensureOwnsCollection(userID: number, collectionID: number): Promise<Collection> {
-        const collection = await this.getCollectionOrThrow(collectionID);
+    private ensureOwns(userID: number, collection: Collection): void {
         if (collection.userID !== userID) {
-            throw new AppError('You can only modify collections you own.', 403);
+            throw new ForbiddenError();
         }
-        return collection;
     }
 
     async getAllCollectionsByUser(userID: number): Promise<Collection[]> {
@@ -86,34 +72,34 @@ class CollectionService {
         });
     }
 
-    async rename(collectionID: number, collectionName: string, userID: number): Promise<void> {
-        await this.ensureOwnsCollection(userID, collectionID);
+    async rename(userID: number, collection: Collection, collectionName: string): Promise<void> {
+        this.ensureOwns(userID, collection);
 
         // FR-18: rename collection.
         if (!collectionName?.trim()) {
             throw new ValidationError('Collection name is required.');
         }
 
-        await CollectionRepository.updateCollection(collectionID, { collectionName: collectionName.trim() });
+        await CollectionRepository.updateCollection(collection.collectionID, { collectionName: collectionName.trim() });
     }
 
-    async update(collectionID: number, data: CollectionUpdateAttributes, userID: number): Promise<void> {
-        await this.ensureOwnsCollection(userID, collectionID);
-        await CollectionRepository.updateCollection(collectionID, data);
+    async update(userID: number, collection: Collection, data: CollectionUpdateAttributes): Promise<void> {
+        this.ensureOwns(userID, collection);
+        await CollectionRepository.updateCollection(collection.collectionID, data);
     }
 
-    async delete(userID: number, collectionID: number): Promise<void> {
+    async delete(userID: number, collection: Collection): Promise<void> {
         // FR-13: owner-only collection deletion.
-        await this.ensureOwnsCollection(userID, collectionID);
-        await CollectionRepository.deleteCollectionById(collectionID);
+        this.ensureOwns(userID, collection);
+        await CollectionRepository.deleteCollectionById(collection.collectionID);
     }
 
-    async share(userID: number, collectionID: number): Promise<ShareCollectionResult> {
+    async share(userID: number, collection: Collection): Promise<ShareCollectionResult> {
         // FR-04: frontend confirms; backend performs owner-only share action.
-        const collection = await this.ensureOwnsCollection(userID, collectionID);
+        this.ensureOwns(userID, collection);
 
         if (collection.visibility !== 'public') {
-            await CollectionRepository.updateCollection(collectionID, { visibility: 'public' });
+            await CollectionRepository.updateCollection(collection.collectionID, { visibility: 'public' });
             collection.visibility = 'public';
         }
 
@@ -125,10 +111,12 @@ class CollectionService {
     }
 
     async importFromFile(
-        collectionId: number,
+        userID: number,
+        collection: Collection,
         file: Express.Multer.File | undefined,
-        userID?: number
     ): Promise<ImportResult> {
+        this.ensureOwns(userID, collection);
+
         // 1. Validate file is provided
         if (!file) {
             throw new NoFileSelectedError();
@@ -170,26 +158,20 @@ class CollectionService {
         }
 
         // 8. Delegate flashcard creation to FlashcardService
-        const count = await FlashcardService.createBulk(collectionId, pairs);
+        const count = await FlashcardService.createBulk(collection, pairs);
 
         // 9. Return result
         return { count, message: `${count} flashcard(s) successfully imported.` };
     }
 
-    async exportAsPdf(collectionId: number): Promise<Buffer> {
-        // 1. Look up collection, throw 404 if not found
-        const collection = await CollectionRepository.findCollectionById(collectionId);
-        if (!collection) {
-            throw new CollectionNotFoundError();
-        }
-
-        // 2. Fetch all flashcards via FlashcardService
-        const flashcards = await FlashcardService.getAllByCollection(collectionId);
+    async exportAsPdf(userID: number, collection: Collection): Promise<Buffer> {
+        // 1. Fetch all flashcards via FlashcardService
+        const flashcards = await FlashcardService.getAllByCollection(userID, collection);
         if (flashcards.length === 0) {
             throw new EmptyCollectionError();
         }
 
-        // 3. Generate PDF buffer
+        // 2. Generate PDF buffer
         return new Promise<Buffer>((resolve, reject) => {
             const doc = new PDFDocument();
             const chunks: Buffer[] = [];
