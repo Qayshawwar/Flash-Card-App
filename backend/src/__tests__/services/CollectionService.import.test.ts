@@ -6,12 +6,6 @@
  * the service is fully implemented, at which point all should pass.
  *
  * Author: Vitalii Belsiubniak
- * TC-UC10-F-007 (auth / HTTP 401) is enforced entirely by Express middleware
- * before the controller is reached — it is not testable at the service level
- * and is marked todo for an integration test suite.
- *
- * TC-UC10-NF-002 (keyboard accessibility) and TC-UC10-NF-003 (cross-browser)
- * are frontend/E2E concerns that require Playwright or Cypress — also todo.
  */
 
 import { Readable } from 'stream';
@@ -44,6 +38,7 @@ jest.mock('../../api/services/FlashcardService', () => ({
 
 import collectionService from '../../api/services/CollectionService';
 import flashcardService from '../../api/services/FlashcardService';
+import Collection from '../../api/models/Collection';
 
 import {
     CorruptedFileError,
@@ -89,7 +84,18 @@ function makeMockFile(originalname: string, mimetype: string, content: string | 
     };
 }
 
-const COLLECTION_ID = 1;
+const OWNER_ID = 42;
+// Collection is pre-fetched by CollectionAccessMiddleware and passed into the service.
+// Tests construct it directly to reflect that contract.
+const MOCK_COLLECTION = {
+    collectionID: 1,
+    userID: OWNER_ID,
+    collectionName: 'Test Collection',
+    description: null,
+    visibility: 'private' as const,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+} as unknown as Collection;
 
 // Reusable valid Q/A content
 const TWO_QA_TXT =
@@ -126,14 +132,14 @@ describe('CollectionService — importFromFile', () => {
         mockCreateBulk.mockResolvedValue(2);
         const file = makeMockFile('valid_flashcards.txt', 'text/plain', TWO_QA_TXT);
 
-        const result = await collectionService.importFromFile(COLLECTION_ID, file);
+        const result = await collectionService.importFromFile(OWNER_ID, MOCK_COLLECTION, file);
 
         expect(result.count).toBe(2);
         expect(result.message).toBe('2 flashcard(s) successfully imported.');
         // CollectionService must delegate to FlashcardService — once, with the parsed pairs
         expect(mockCreateBulk).toHaveBeenCalledTimes(1);
         expect(mockCreateBulk).toHaveBeenCalledWith(
-            COLLECTION_ID,
+            MOCK_COLLECTION,
             expect.arrayContaining([
                 expect.objectContaining({ question: expect.any(String), answer: expect.any(String) }),
             ])
@@ -152,7 +158,7 @@ describe('CollectionService — importFromFile', () => {
             'application/pdf',
             Buffer.from('%PDF-1.4 placeholder')
         );
-        const result = collectionService.importFromFile(COLLECTION_ID, file);
+        const result = collectionService.importFromFile(OWNER_ID, MOCK_COLLECTION, file);
         // tests that function throws particular error type.
         await expect(result).rejects.toThrow(UnsupportedFileFormatError);
         // tests that function throws particular error message.
@@ -173,7 +179,7 @@ describe('CollectionService — importFromFile', () => {
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             Buffer.from('PK\x03\x04')
         );
-        const result = collectionService.importFromFile(COLLECTION_ID, file);
+        const result = collectionService.importFromFile(OWNER_ID, MOCK_COLLECTION, file);
         // tests that function throws particular error type.
         await expect(result).rejects.toThrow(UnsupportedFileFormatError);
         // tests that function throws particular error message.
@@ -194,7 +200,7 @@ describe('CollectionService — importFromFile', () => {
             'image/jpeg',
             Buffer.from('\xFF\xD8\xFF')
         );
-        const result = collectionService.importFromFile(COLLECTION_ID, file);
+        const result = collectionService.importFromFile(OWNER_ID, MOCK_COLLECTION, file);
         // tests that function throws particular error type.
         await expect(result).rejects.toThrow(UnsupportedFileFormatError);
         // tests that function throws particular error message.
@@ -210,7 +216,7 @@ describe('CollectionService — importFromFile', () => {
      * Expected: NoFileSelectedError thrown, FlashcardService never called.
      */
     it('TC-UC10-F-005: throws NoFileSelectedError when no file is provided', async () => {
-        const result = collectionService.importFromFile(COLLECTION_ID, undefined);
+        const result = collectionService.importFromFile(OWNER_ID, MOCK_COLLECTION, undefined);
         // tests that function throws particular error type.
         await expect(result).rejects.toThrow(NoFileSelectedError);
         // tests that function throws particular error message.
@@ -227,7 +233,7 @@ describe('CollectionService — importFromFile', () => {
      */
     it('TC-UC10-F-006: throws EmptyFileError for an empty .txt file', async () => {
         const file = makeMockFile('empty.txt', 'text/plain', '');
-        const result = collectionService.importFromFile(COLLECTION_ID, file);
+        const result = collectionService.importFromFile(OWNER_ID, MOCK_COLLECTION, file);
         // tests that function throws particular error type.
         await expect(result).rejects.toThrow(EmptyFileError);
         // tests that function throws particular error message.
@@ -244,7 +250,7 @@ describe('CollectionService — importFromFile', () => {
      */
     it('TC-UC10-F-007: throws InvalidFlashcardFormatError when file has no Q/A structure', async () => {
         const file = makeMockFile('unstructured.txt', 'text/plain', UNSTRUCTURED_TXT);
-        const result = collectionService.importFromFile(COLLECTION_ID, file);
+        const result = collectionService.importFromFile(OWNER_ID, MOCK_COLLECTION, file);
         // tests that function throws particular error type.
         await expect(result).rejects.toThrow(InvalidFlashcardFormatError);
         // tests that function throws particular error message.
@@ -265,7 +271,7 @@ describe('CollectionService — importFromFile', () => {
             'text/plain',
             Buffer.from('Q: \x00broken\x01 A: \x02value\x03')
         );
-        const result = collectionService.importFromFile(COLLECTION_ID, file);
+        const result = collectionService.importFromFile(OWNER_ID, MOCK_COLLECTION, file);
         // tests that function throws particular error type.
         await expect(result).rejects.toThrow(CorruptedFileError);
         // tests that function throws particular error message.
@@ -281,7 +287,7 @@ describe('CollectionService — importFromFile', () => {
      */
     it('TC-UC10-F-009: throws EmptyFileError for a file containing only whitespace', async () => {
         const file = makeMockFile('whitespace.txt', 'text/plain', '   \n\t\n   ');
-        const result = collectionService.importFromFile(COLLECTION_ID, file);
+        const result = collectionService.importFromFile(OWNER_ID, MOCK_COLLECTION, file);
         // tests that function throws particular error type.
         await expect(result).rejects.toThrow(EmptyFileError);
         // tests that function throws particular error message.
@@ -315,7 +321,8 @@ describe('CollectionService — importFromFile', () => {
         const results = await Promise.all(
             Array.from({ length: concurrency }, () =>
                 collectionService.importFromFile(
-                    COLLECTION_ID,
+                    OWNER_ID,
+                    MOCK_COLLECTION,
                     makeMockFile('valid_flashcards.txt', 'text/plain', qaContent)
                 )
             )
@@ -338,7 +345,7 @@ describe('CollectionService — importFromFile', () => {
     it('TC-UC10-NF-004: throws FileTooLargeError for files exceeding 50 MB', async () => {
         const largeBuffer = Buffer.alloc(51 * 1024 * 1024, 'a');
         const file = makeMockFile('huge.txt', 'text/plain', largeBuffer);
-        const result = collectionService.importFromFile(COLLECTION_ID, file);
+        const result = collectionService.importFromFile(OWNER_ID, MOCK_COLLECTION, file);
         // tests that function throws particular error type.
         await expect(result).rejects.toThrow(FileTooLargeError);
         // tests that function throws particular error message.
