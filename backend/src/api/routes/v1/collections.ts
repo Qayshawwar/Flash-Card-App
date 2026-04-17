@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import { body } from 'express-validator';
 import CollectionController from '../../controllers/CollectionController';
 import AuthMiddleware from '../../middlewares/AuthMiddleware';
 import CollectionAccessMiddleware from '../../middlewares/CollectionAccessMiddleware';
+import { validate } from '../../middlewares/validator';
 import flashcardsRouter from './flashcards';
 import studySessionsRouter from './studySessions';
 
@@ -15,10 +17,21 @@ router.use(CollectionAccessMiddleware.forCollection.bind(CollectionAccessMiddlew
 router.get('/', CollectionController.getAll.bind(CollectionController));
 
 // UC-3:  POST   /api/v1/collections
-router.post('/', CollectionController.create.bind(CollectionController));
+router.post(
+    '/',
+    body('collectionName').notEmpty().isLength({ max: 32 }).withMessage('Collection name is required and must be at most 32 characters.'),
+    body('visibility').optional().isIn(['public', 'private']).withMessage("visibility must be 'public' or 'private'."),
+    validate,
+    CollectionController.create.bind(CollectionController)
+);
 
 // UC-8:  PATCH  /api/v1/collections/:collectionId
-router.patch('/:collectionId', CollectionController.rename.bind(CollectionController));
+router.patch(
+    '/:collectionId',
+    body('collectionName').notEmpty().isLength({ max: 32 }).withMessage('Collection name is required and must be at most 32 characters.'),
+    validate,
+    CollectionController.rename.bind(CollectionController)
+);
 
 // UC-5:  DELETE /api/v1/collections/:collectionId
 router.delete('/:collectionId', CollectionController.delete.bind(CollectionController));

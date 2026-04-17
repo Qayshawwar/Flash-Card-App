@@ -2,7 +2,7 @@ import FlashcardRepository from '../repositories/FlashcardRepository';
 import Collection from '../models/Collection';
 import Flashcard, { FlashcardCreationAttributes, FlashcardUpdateAttributes } from '../models/Flashcard';
 import { UserFlashcardProgressUpdateAttributes } from '../models/UserFlashcardProgress';
-import { AppError, ForbiddenError, ValidationError } from '../../errors';
+import { AppError, ForbiddenError } from '../../errors';
 
 // Business logic for individual flashcards
 // FR-31: create manually;
@@ -73,10 +73,6 @@ class FlashcardService {
     async create(userID: number, collection: Collection, data: Omit<FlashcardCreationAttributes, 'collectionID'>): Promise<Flashcard> {
         // FR-31: manual flashcard creation requires ownership.
         this.ensureOwns(userID, collection);
-
-        if (!data.question?.trim() || !data.answer?.trim()) {
-            throw new ValidationError('Question and answer are required.');
-        }
 
         return FlashcardRepository.createFlashcard({
             collectionID: collection.collectionID,

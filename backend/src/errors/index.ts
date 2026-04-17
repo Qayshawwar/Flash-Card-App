@@ -1,4 +1,5 @@
 export { AppError } from './AppError';
+export { BadRequestError } from './BadRequestError';
 export { CollectionNotFoundError } from './CollectionNotFoundError';
 export { ConflictError } from './ConflictError';
 export { ForbiddenError } from './ForbiddenError';

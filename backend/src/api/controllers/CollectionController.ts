@@ -62,7 +62,7 @@ class CollectionController {
 
     async importFile(req: Request, res: Response, next: NextFunction) {
         try {
-            const file = (req as any).file as Express.Multer.File | undefined;
+            const file = req.file;
             const result = await CollectionService.importFromFile(req.userdata!.userID, req.collection!, file);
             res.status(200).json(result);
         } catch (err) {
@@ -74,7 +74,8 @@ class CollectionController {
         try {
             const pdfBuffer = await CollectionService.exportAsPdf(req.userdata!.userID, req.collection!);
             res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename="${req.collection!.collectionName}.pdf"`);
+            const safeName = req.collection!.collectionName.replace(/[^\w\s-]/g, '_');
+            res.setHeader('Content-Disposition', `attachment; filename="${safeName}.pdf"`);
             res.status(200).send(pdfBuffer);
         } catch (err) {
             next(err);

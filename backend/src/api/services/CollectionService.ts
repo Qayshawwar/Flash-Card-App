@@ -2,11 +2,7 @@ import Collection, { CollectionCreationAttributes, CollectionUpdateAttributes } 
 import CollectionRepository from '../repositories/CollectionRepository';
 import FlashcardService from './FlashcardService';
 import { Express } from 'express';
-import {
-    AppError,
-    ForbiddenError,
-    ValidationError,
-} from '../../errors';
+import { AppError, ForbiddenError } from '../../errors';
 import PDFDocument from 'pdfkit';
 import {
     NoFileSelectedError,
@@ -62,10 +58,6 @@ class CollectionService {
 
     async create(data: CollectionCreationAttributes): Promise<Collection> {
         // FR-12: create new collection.
-        if (!data.collectionName?.trim()) {
-            throw new ValidationError('Collection name is required.');
-        }
-
         return CollectionRepository.createCollection({
             ...data,
             collectionName: data.collectionName.trim(),
@@ -76,10 +68,6 @@ class CollectionService {
         this.ensureOwns(userID, collection);
 
         // FR-18: rename collection.
-        if (!collectionName?.trim()) {
-            throw new ValidationError('Collection name is required.');
-        }
-
         await CollectionRepository.updateCollection(collection.collectionID, { collectionName: collectionName.trim() });
     }
 

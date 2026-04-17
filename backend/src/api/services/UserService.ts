@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import User, { UserCreationAttributes, UserOutput, UserUpdateAttributes } from '../models/User';
 import { UserSecurityStatusUpdateAttributes } from '../models/UserSecurityStatus';
 import { UserSettingsPreferencesUpdateAttributes } from '../models/UserSettingsPreferences';
-import { AppError, UnauthorizedError, ValidationError } from '../../errors';
+import { AppError, UnauthorizedError } from '../../errors';
 
 // Business logic for user profile management
 // FR-06 (Use Case 6): edit profile (name, email, password)
@@ -16,7 +16,6 @@ export interface DeleteAccountResult {
 }
 
 const BCRYPT_ROUNDS = 12;
-const PASSWORD_MIN_LENGTH = 12;
 
 class UserService {
     // Internal helper to keep "user not found" handling consistent.
@@ -61,31 +60,12 @@ class UserService {
             payload.passwordHash = data.passwordHash;
         }
 
-        if (Object.keys(payload).length === 0) {
-            throw new ValidationError('No profile fields provided for update.');
-        }
-
         await UserRepository.updateUser(userID, payload);
         return this.getUserOrThrow(userID);
     }
 
     async changePassword(userID: number, data: { currentPassword: string; newPassword: string }): Promise<void> {
         const { currentPassword, newPassword } = data;
-
-        if (!currentPassword || !newPassword) {
-            throw new ValidationError('Current password and new password are required.');
-        }
-
-        // FR-27: enforce password complexity for password changes.
-        if (newPassword.length < PASSWORD_MIN_LENGTH) {
-            throw new ValidationError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters long.`);
-        }
-        if (!/[A-Z]/.test(newPassword)) {
-            throw new ValidationError('Password must contain at least one uppercase letter.');
-        }
-        if (!/[0-9]/.test(newPassword)) {
-            throw new ValidationError('Password must contain at least one number.');
-        }
 
         // FR-06: change password for authenticated user context.
         const profile = await this.getUserOrThrow(userID);
