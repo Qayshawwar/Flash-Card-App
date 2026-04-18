@@ -4,6 +4,7 @@ import CollectionController from '../../controllers/CollectionController';
 import AuthMiddleware from '../../middlewares/AuthMiddleware';
 import CollectionAccessMiddleware from '../../middlewares/CollectionAccessMiddleware';
 import { validate } from '../../middlewares/validator';
+import StudySessionGuardMiddleware from '../../middlewares/StudySessionGuardMiddleware';
 import flashcardsRouter from './flashcards';
 import studySessionsRouter from './studySessions';
 
@@ -34,7 +35,11 @@ router.patch(
 );
 
 // UC-5:  DELETE /api/v1/collections/:collectionId
-router.delete('/:collectionId', CollectionController.delete.bind(CollectionController));
+router.delete(
+    '/:collectionId',
+    StudySessionGuardMiddleware.noActiveSessionForCollection.bind(StudySessionGuardMiddleware),
+    CollectionController.delete.bind(CollectionController)
+);
 
 // UC-16: POST   /api/v1/collections/:collectionId/share
 router.post('/:collectionId/share', CollectionController.share.bind(CollectionController));
