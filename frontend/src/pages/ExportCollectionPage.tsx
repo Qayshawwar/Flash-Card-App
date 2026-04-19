@@ -1,10 +1,12 @@
 import { type CSSProperties } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import PreviewCard from '../components/PreviewCard';
+import DarkModeToggle from '../components/DarkModeToggle';
 
 const SAMPLE = [
-  { question: 'What is photosynthesis?', answer: 'Process plants use to make food from light.' },
+  {
+    question: 'What is photosynthesis?',
+    answer: 'Process plants use to make food from light.',
+  },
   { question: 'Define mitochondria', answer: 'Organelle that produces ATP.' },
 ];
 
@@ -13,25 +15,27 @@ export default function ExportCollectionPage() {
   const { collectionId } = useParams();
 
   function handleExportPdf() {
-    // TODO: wire to PDF export API (UC11)
     window.alert('Export to PDF will call the API when UC11 is implemented.');
   }
 
   return (
     <div style={styles.page}>
-      <Navbar />
-      <div style={styles.container}>
+      <header style={styles.header}>
         <button
           type="button"
           style={styles.backBtn}
           onClick={() =>
             collectionId
               ? navigate(`/collections/${collectionId}`)
-              : navigate('/collections')
+              : navigate('/mock')
           }
         >
-          ← Back to collection
+          ← Back
         </button>
+        <DarkModeToggle variant="compact" showLabel={false} />
+      </header>
+
+      <div style={styles.container}>
         <h1 style={styles.h1}>Export collection</h1>
         <p style={styles.lead}>
           Collection ID: <code style={styles.code}>{collectionId ?? '—'}</code>
@@ -43,12 +47,11 @@ export default function ExportCollectionPage() {
         <div style={styles.list}>
           <h2 style={styles.h2}>Included cards</h2>
           {SAMPLE.map((row, i) => (
-            <PreviewCard
-              key={row.question}
-              index={i}
-              question={row.question}
-              answer={row.answer}
-            />
+            <div key={row.question} style={styles.card}>
+              <p style={styles.cardMeta}>#{i + 1}</p>
+              <p style={styles.cardQ}>{row.question}</p>
+              <p style={styles.cardA}>{row.answer}</p>
+            </div>
           ))}
         </div>
       </div>
@@ -62,10 +65,12 @@ const styles: Record<string, CSSProperties> = {
     backgroundColor: 'var(--app-bg, #f5f3ee)',
     fontFamily: 'Georgia, serif',
   },
-  container: {
-    maxWidth: 720,
-    margin: '0 auto',
-    padding: '32px 16px',
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '16px 20px',
+    borderBottom: '1px solid var(--app-muted, #e0ddd6)',
   },
   backBtn: {
     background: 'none',
@@ -73,9 +78,13 @@ const styles: Record<string, CSSProperties> = {
     color: 'var(--app-muted-strong, #555)',
     fontSize: 14,
     cursor: 'pointer',
-    marginBottom: 20,
     padding: 0,
     fontFamily: 'sans-serif',
+  },
+  container: {
+    maxWidth: 720,
+    margin: '0 auto',
+    padding: '32px 16px',
   },
   h1: {
     fontSize: 22,
@@ -118,5 +127,31 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: 'sans-serif',
     color: 'var(--app-fg, #1a1a1a)',
     margin: '0 0 8px 0',
+  },
+  card: {
+    border: '1px solid var(--app-muted, #e0ddd6)',
+    borderRadius: 8,
+    padding: '12px 14px',
+    backgroundColor: 'var(--app-surface, #fff)',
+  },
+  cardMeta: {
+    fontSize: 11,
+    color: 'var(--app-muted, #888)',
+    margin: '0 0 6px 0',
+    fontFamily: 'sans-serif',
+  },
+  cardQ: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: 'var(--app-fg, #1a1a1a)',
+    margin: '0 0 6px 0',
+    fontFamily: 'sans-serif',
+  },
+  cardA: {
+    fontSize: 14,
+    color: 'var(--app-muted-strong, #555)',
+    margin: 0,
+    fontFamily: 'sans-serif',
+    lineHeight: 1.45,
   },
 };
