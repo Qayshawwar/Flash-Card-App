@@ -7,12 +7,60 @@
 // UC14: Add flashcard manually via "+" button (Vitalii)
 // UC16: Share collection button (Vitalii)
 
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { getMinddeckToken } from '../services/apiAuth';
+import { duplicateFlashcard, getFlashcards, type FlashcardDto } from '../services/flashcardApi';
 
 export default function FlashcardList() {
   const navigate = useNavigate();
   const { collectionId } = useParams();
+  const [cards, setCards] = useState<FlashcardDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
+
+  const loadCards = useCallback(async () => {
+    if (!collectionId) {
+      setError('Missing collection.');
+      setLoading(false);
+      return;
+    }
+    if (!getMinddeckToken()) {
+      setError('Please sign in to view this collection.');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await getFlashcards(collectionId);
+      setCards(list);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load flashcards.');
+      setCards([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [collectionId]);
+
+  useEffect(() => {
+    void loadCards();
+  }, [loadCards]);
+
+  async function handleDuplicate(flashcardID: number) {
+    if (!collectionId) return;
+    setDuplicatingId(flashcardID);
+    setError(null);
+    try {
+      const copy = await duplicateFlashcard(collectionId, flashcardID);
+      setCards((prev) => [...prev, copy]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not duplicate flashcard.');
+    } finally {
+      setDuplicatingId(null);
+    }
+  }
 
   return (
     <div style={styles.page}>
@@ -25,7 +73,6 @@ export default function FlashcardList() {
           <span style={styles.navTitle}>MindDeck</span>
         </div>
         <div style={styles.navRight}>
-          {/* TODO: Dark mode toggle button - UC12 (Aaliyan) */}
           <button style={styles.profileBtn} onClick={() => navigate('/edit-profile')}>Profile</button>
         </div>
       </nav>
@@ -34,23 +81,72 @@ export default function FlashcardList() {
           ← Back to Collections
         </button>
 
-        {/* TODO: Collection title - fetch by collectionId */}
         <h2 style={styles.heading}>Collection Name</h2>
 
-        {/* TODO: Search bar to filter flashcards - UC13 (Vitalii) */}
+        {collectionId ? (
+          <div style={styles.actions}>
+            <button
+              type="button"
+              style={styles.primaryBtn}
+              onClick={() => navigate(`/collections/${collectionId}/study`)}
+            >
+              Study
+            </button>
+          </div>
+        ) : null}
 
-        {/* TODO: Action buttons */}
-        {/* "Study" → navigate(`/collections/${collectionId}/study`) - UC4 (Qays) */}
-        {/* "Study Difficult" → navigate('/difficult-flashcards') - UC7 (Srinidhi) */}
-        {/* "Import" → open import modal - UC10 (Aaliyan) */}
-        {/* "Export PDF" → open export modal - UC11 (Aaliyan) */}
-        {/* "Share" → UC16 (Vitalii) */}
-        {/* "+" → add flashcard manually - UC14 (Vitalii) */}
+        {error ? (
+          <div role="alert" style={styles.alert}>
+            {error}
+            {error.includes('sign in') ? (
+              <>
+                {' '}
+                <button type="button" style={styles.linkBtn} onClick={() => navigate('/')}>
+                  Sign in
+                </button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
 
-        {/* TODO: Table/list of flashcards */}
-        {/* Each row: question, answer, isFlaggedDifficult checkbox, edit/delete */}
-
-        <p style={styles.placeholder}>UC4, UC10, UC11, UC13, UC14, UC16 - Flashcard list goes here</p>
+        {loading ? (
+          <p style={styles.muted}>Loading flashcards…</p>
+        ) : !error || cards.length > 0 ? (
+          <div style={styles.tableWrap}>
+            {!loading && cards.length === 0 && !error ? (
+              <p style={styles.muted}>No flashcards in this collection yet.</p>
+            ) : null}
+            {cards.length > 0 ? (
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Question</th>
+                    <th style={styles.th}>Answer</th>
+                    <th style={styles.thAction} aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {cards.map((c) => (
+                    <tr key={c.flashcardID}>
+                      <td style={styles.td}>{c.question}</td>
+                      <td style={styles.td}>{c.answer}</td>
+                      <td style={styles.tdAction}>
+                        <button
+                          type="button"
+                          style={styles.smallBtn}
+                          disabled={duplicatingId === c.flashcardID}
+                          onClick={() => void handleDuplicate(c.flashcardID)}
+                        >
+                          {duplicatingId === c.flashcardID ? 'Duplicating…' : 'Duplicate'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -66,5 +162,82 @@ const styles: Record<string, React.CSSProperties> = {
   container: { maxWidth: '900px', margin: '0 auto', padding: '32px 16px' },
   backBtn: { background: 'none', border: 'none', color: '#555', fontSize: '14px', cursor: 'pointer', marginBottom: '16px', padding: '0' },
   heading: { fontSize: '22px', fontWeight: 'bold', color: '#1a1a1a', marginBottom: '16px' },
-  placeholder: { color: '#aaa', fontFamily: 'sans-serif', fontSize: '14px' },
+  actions: { marginBottom: '16px' },
+  primaryBtn: {
+    backgroundColor: '#6b8f71',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '8px 18px',
+    fontSize: '14px',
+    cursor: 'pointer',
+    fontFamily: 'sans-serif',
+  },
+  alert: {
+    backgroundColor: '#fdeaea',
+    color: '#8b2a2a',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    marginBottom: '16px',
+    fontFamily: 'sans-serif',
+    fontSize: '14px',
+  },
+  linkBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#6b8f71',
+    cursor: 'pointer',
+    textDecoration: 'underline',
+    fontFamily: 'sans-serif',
+    fontSize: '14px',
+    padding: 0,
+  },
+  muted: { color: '#888', fontFamily: 'sans-serif', fontSize: '14px' },
+  tableWrap: { marginTop: '8px' },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    backgroundColor: '#fff',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+    fontFamily: 'sans-serif',
+    fontSize: '14px',
+  },
+  th: {
+    textAlign: 'left',
+    padding: '12px 14px',
+    backgroundColor: '#e8efe9',
+    color: '#2c2c2c',
+    fontWeight: 600,
+    borderBottom: '1px solid #d8dfd9',
+  },
+  thAction: {
+    width: '120px',
+    padding: '12px 14px',
+    backgroundColor: '#e8efe9',
+    borderBottom: '1px solid #d8dfd9',
+  },
+  td: {
+    padding: '12px 14px',
+    borderBottom: '1px solid #eee',
+    verticalAlign: 'top',
+    color: '#333',
+  },
+  tdAction: {
+    padding: '10px 14px',
+    borderBottom: '1px solid #eee',
+    verticalAlign: 'middle',
+    textAlign: 'right',
+  },
+  smallBtn: {
+    backgroundColor: '#fff',
+    border: '1px solid #6b8f71',
+    color: '#4a6b4f',
+    borderRadius: '6px',
+    padding: '6px 12px',
+    fontSize: '13px',
+    cursor: 'pointer',
+    fontFamily: 'sans-serif',
+  },
 };

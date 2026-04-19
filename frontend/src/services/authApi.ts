@@ -1,4 +1,4 @@
-const apiBase = () => process.env.REACT_APP_API_URL ?? '';
+import { apiBase } from './apiAuth';
 
 export type LoginResult =
   | { ok: true; token: string }
