@@ -9,9 +9,10 @@ interface Props {
   currentName: string;
   onSave: (newName: string) => void;
   onCancel: () => void;
+  existingNames?: string[];
 }
 
-function RenameCollection({ currentName, onSave, onCancel }: Props) {
+function RenameCollection({ currentName, onSave, onCancel, existingNames = [] }: Props) {
   const [newName, setNewName] = useState(currentName);
   const [error, setError] = useState('');
 
@@ -24,7 +25,16 @@ function RenameCollection({ currentName, onSave, onCancel }: Props) {
       setError('Invalid Collection Name.');
       return;
     }
-    onSave(newName);
+    if (
+      existingNames
+        .filter(n => n !== currentName)
+        .map(n => n.toLowerCase())
+        .includes(newName.trim().toLowerCase())
+    ) {
+      setError('Collection Name Already Exists.');
+      return;
+    }
+    onSave(newName.trim());
   };
 
   return (
@@ -57,72 +67,23 @@ function RenameCollection({ currentName, onSave, onCancel }: Props) {
 const styles = {
   overlay: {
     position: 'fixed' as const,
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
+    top: 0, left: 0,
+    width: '100%', height: '100%',
     backgroundColor: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
+    display: 'flex', justifyContent: 'center', alignItems: 'center',
   },
   modal: {
     backgroundColor: '#ffffff',
-    padding: '40px',
-    borderRadius: '10px',
-    width: '350px',
-    display: 'flex',
-    flexDirection: 'column' as const,
+    padding: '40px', borderRadius: '10px', width: '350px',
+    display: 'flex', flexDirection: 'column' as const,
   },
-  title: {
-    fontSize: '20px',
-    fontWeight: 'bold',
-    marginBottom: '20px',
-    color: '#333',
-  },
-  label: {
-    fontSize: '11px',
-    fontWeight: 'bold',
-    color: '#555',
-    marginBottom: '5px',
-  },
-  input: {
-    padding: '10px',
-    marginBottom: '10px',
-    borderRadius: '5px',
-    border: '1px solid #155a3e',
-    fontSize: '14px',
-  },
-  error: {
-    color: 'red',
-    fontSize: '12px',
-    marginBottom: '10px',
-  },
-  buttons: {
-    display: 'flex',
-    gap: '10px',
-    marginTop: '10px',
-  },
-  saveButton: {
-    flex: 1,
-    padding: '10px',
-    backgroundColor: '#6b8f71',
-    color: 'white',
-    border: 'none',
-    borderRadius: '5px',
-    fontSize: '14px',
-    cursor: 'pointer',
-  },
-  cancelButton: {
-    flex: 1,
-    padding: '10px',
-    backgroundColor: 'white',
-    border: '1px solid #ccc',
-    borderRadius: '5px',
-    fontSize: '14px',
-    cursor: 'pointer',
-    color: '#333',
-  },
+  title: { fontSize: '20px', fontWeight: 'bold', marginBottom: '20px', color: '#333' },
+  label: { fontSize: '11px', fontWeight: 'bold', color: '#555', marginBottom: '5px' },
+  input: { padding: '10px', marginBottom: '10px', borderRadius: '5px', border: '1px solid #155a3e', fontSize: '14px' },
+  error: { color: 'red', fontSize: '12px', marginBottom: '10px' },
+  buttons: { display: 'flex', gap: '10px', marginTop: '10px' },
+  saveButton: { flex: 1, padding: '10px', backgroundColor: '#6b8f71', color: 'white', border: 'none', borderRadius: '5px', fontSize: '14px', cursor: 'pointer' },
+  cancelButton: { flex: 1, padding: '10px', backgroundColor: 'white', border: '1px solid #ccc', borderRadius: '5px', fontSize: '14px', cursor: 'pointer', color: '#333' },
 };
 
 export default RenameCollection;
