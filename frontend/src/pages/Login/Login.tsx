@@ -44,7 +44,11 @@ function Login() {
      });
      if (!res.ok) {
        const data = await res.json().catch(() => ({}));
-       setErrors({ general:  "Invalid credentials. Please try again." });
+       if (res.status === 423 || res.status === 429) {
+  setErrors({ general: data.message || "Account locked. Too many failed attempts. Try again in 60 minutes." });
+} else {
+  setErrors({ general: data.message || "Invalid credentials. Please try again." });
+}
        setLoading(false);
        return;
      }
