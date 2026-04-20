@@ -26,7 +26,6 @@ const shuffle = (arr: Flashcard[]) => [...arr].sort(() => Math.random() - 0.5);
 export default function StudyMode() {
   const navigate = useNavigate();
   const { username } = useCurrentUser();
-
   const { collectionId } = useParams();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -40,20 +39,30 @@ export default function StudyMode() {
   const [isPaused, setIsPaused] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [sessionId, setSessionId] = useState<number | null>(null);
 
   const getAuthHeaders = (): HeadersInit => bearerAuthHeaders();
 
+  const startSession = () => {
+    fetch(`${API_BASE}/api/v1/collections/${collectionId}/study-sessions`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    })
+      .then(res => res.json())
+      .then(data => { if (data.sessionID) setSessionId(data.sessionID); })
+      .catch(() => {});
+  };
+
   useEffect(() => {
-    fetch(`${API_BASE}/api/v1/collections/${collectionId}/flashcards`, { headers: getAuthHeaders() })
+    fetch(`${API_BASE}/api/v1/collections/${collectionId}/flashcards?t=${Date.now()}`, { headers: getAuthHeaders() })
       .then(res => res.json())
       .then(data => {
-        setCards(shuffle(Array.isArray(data) && data.length > 0 ? data : []));
+        const shuffled = shuffle(Array.isArray(data) && data.length > 0 ? data : []);
+        setCards(shuffled);
         setLoading(false);
+        if (shuffled.length > 0) startSession();
       })
-      .catch(() => {
-        setCards([]);
-        setLoading(false);
-      });
+      .catch(() => { setCards([]); setLoading(false); });
 
     fetch(`${API_BASE}/api/v1/collections`, { headers: getAuthHeaders() })
       .then(res => res.json())
@@ -78,72 +87,60 @@ export default function StudyMode() {
   const currentCard = cards[currentIndex];
   const progress = totalCards > 0 ? Math.round((currentIndex / totalCards) * 100) : 0;
 
-  const handleKnown = () => { setKnown(known + 1); advance(); };
-  const handleUnknown = () => { setUnknown(unknown + 1); advance(); };
-
-  const advance = () => {
-    if (currentIndex + 1 >= totalCards) {
-      setIsComplete(true);
-    } else {
-      setCurrentIndex(currentIndex + 1);
-      setIsFlipped(false);
-    }
+  const recordAnswer = (flashcardID: number, correct: boolean) => {
+    if (!sessionId) return;
+    fetch(`${API_BASE}/api/v1/collections/${collectionId}/study-sessions/${sessionId}/answers`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ flashcardID, responseType: correct ? 'known' : 'unknown' }),
+    }).catch(() => {});
   };
 
+  const completeSession = () => {
+    if (!sessionId) return;
+    fetch(`${API_BASE}/api/v1/collections/${collectionId}/study-sessions/${sessionId}/complete`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    }).catch(() => {});
+  };
+
+  const advance = (correct: boolean) => {
+    recordAnswer(currentCard.flashcardID, correct);
+    if (currentIndex + 1 >= totalCards) { completeSession(); setIsComplete(true); }
+    else { setCurrentIndex(currentIndex + 1); setIsFlipped(false); }
+  };
+
+  const handleKnown = () => { setKnown(known + 1); advance(true); };
+  const handleUnknown = () => { setUnknown(unknown + 1); advance(false); };
+
   const handleRestart = () => {
-    setCurrentIndex(0);
-    setIsFlipped(false);
-    setKnown(0);
-    setUnknown(0);
-    setIsComplete(false);
+    setCurrentIndex(0); setIsFlipped(false); setKnown(0);
+    setUnknown(0); setIsComplete(false); setSessionId(null);
+    startSession();
   };
 
   const handleLogout = () => {
-    fetch(`${API_BASE}/api/v1/auth/logout`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-    }).catch(() => {});
-    try {
-      localStorage.removeItem('minddeck_token');
-      sessionStorage.removeItem('minddeck_token');
-    } catch {
-      /* ignore */
-    }
+    fetch(`${API_BASE}/api/v1/auth/logout`, { method: 'POST', headers: getAuthHeaders() }).catch(() => {});
+    try { localStorage.removeItem('minddeck_token'); sessionStorage.removeItem('minddeck_token'); } catch { }
     navigate('/');
   };
 
-  if (loading) {
-    return (
-      <div style={styles.page}>
-        <div style={{ textAlign: 'center', paddingTop: '80px', color: '#888' }}>Loading study session...</div>
-      </div>
-    );
-  }
+  if (loading) return <div style={styles.page}><div style={{ textAlign: 'center', paddingTop: '80px', color: '#888' }}>Loading study session...</div></div>;
 
-  if (totalCards === 0) {
-    return (
-      <div style={styles.page}>
-        <nav style={styles.navbar}>
-          <div style={styles.navBrand}>
-            <Logo />
-            <span style={styles.navTitle}>MindDeck</span>
-          </div>
-        </nav>
-        <div style={{ textAlign: 'center', paddingTop: '80px' }}>
-          <p style={{ color: '#888', fontFamily: 'sans-serif', fontSize: '16px' }}>No flashcards in this collection yet. Add some first!</p>
-          <button style={{ ...styles.exitBtn, marginTop: '16px' }} onClick={() => navigate(`/collections/${collectionId}`)}>Back to Collection</button>
-        </div>
+  if (totalCards === 0) return (
+    <div style={styles.page}>
+      <nav style={styles.navbar}><div style={styles.navBrand}><Logo /><span style={styles.navTitle}>MindDeck</span></div></nav>
+      <div style={{ textAlign: 'center', paddingTop: '80px' }}>
+        <p style={{ color: '#888', fontFamily: 'sans-serif', fontSize: '16px' }}>No flashcards in this collection yet. Add some first!</p>
+        <button style={{ ...styles.exitBtn, marginTop: '16px' }} onClick={() => navigate(`/collections/${collectionId}`)}>Back to Collection</button>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
     <div style={styles.page}>
       <nav style={styles.navbar}>
-        <div style={styles.navBrand}>
-          <Logo />
-          <span style={styles.navTitle}>MindDeck</span>
-        </div>
+        <div style={styles.navBrand}><Logo /><span style={styles.navTitle}>MindDeck</span></div>
         <div style={styles.navRight}>
           <button style={styles.pauseBtn} onClick={() => setIsPaused(true)}>⏸ Pause</button>
           <button style={styles.exitBtn} onClick={() => navigate(`/collections/${collectionId}`)}>Exit Study</button>
@@ -163,20 +160,15 @@ export default function StudyMode() {
         <button style={styles.backBtn} onClick={() => navigate(`/collections/${collectionId}`)}>← Back to Collection</button>
         <h2 style={styles.heading}>Study Mode</h2>
         <p style={styles.subtitle}>{collectionName}</p>
-
         <div style={styles.progressRow}>
           <span style={styles.progressLabel}>Card {Math.min(currentIndex + 1, totalCards)} of {totalCards}</span>
           <span style={styles.progressLabel}>{progress}%</span>
         </div>
-        <div style={styles.progressBarBg}>
-          <div style={{ ...styles.progressBarFill, width: `${progress}%` }} />
-        </div>
-
+        <div style={styles.progressBarBg}><div style={{ ...styles.progressBarFill, width: `${progress}%` }} /></div>
         <div style={styles.statsRow}>
           <span style={styles.knownStat}>✓ Known: {known}</span>
           <span style={styles.unknownStat}>✗ Unknown: {unknown}</span>
         </div>
-
         <p style={styles.flipHint}>Click card to reveal answer</p>
         <div style={styles.cardWrapper} onClick={() => setIsFlipped(!isFlipped)}>
           <div style={styles.cardSide}>
@@ -185,7 +177,6 @@ export default function StudyMode() {
             {!isFlipped && <p style={styles.clickToFlip}>Click to flip</p>}
           </div>
         </div>
-
         {isFlipped && (
           <div style={styles.gradeRow}>
             <button style={styles.unknownBtn} onClick={handleUnknown}>✗ Didn't Know</button>
@@ -194,15 +185,7 @@ export default function StudyMode() {
         )}
       </div>
 
-      {isPaused && (
-        <PauseSession
-          deckName={collectionName}
-          currentCard={currentIndex + 1}
-          totalCards={totalCards}
-          onResume={() => setIsPaused(false)}
-          onDashboard={() => navigate('/collections')}
-        />
-      )}
+      {isPaused && <PauseSession deckName={collectionName} currentCard={currentIndex + 1} totalCards={totalCards} onResume={() => setIsPaused(false)} onDashboard={() => navigate('/collections')} />}
 
       {isComplete && (
         <div style={styles.overlay}>
@@ -211,22 +194,11 @@ export default function StudyMode() {
             <h3 style={styles.modalTitle}>Session Complete!</h3>
             <p style={styles.modalSubtitle}>You reviewed all {totalCards} cards.</p>
             <div style={styles.summaryRow}>
-              <div style={styles.summaryBox}>
-                <p style={styles.summaryNum}>{known}</p>
-                <p style={styles.summaryLabel}>Known</p>
-              </div>
+              <div style={styles.summaryBox}><p style={styles.summaryNum}>{known}</p><p style={styles.summaryLabel}>Known</p></div>
               <div style={styles.summaryDivider} />
-              <div style={styles.summaryBox}>
-                <p style={{ ...styles.summaryNum, color: '#c0392b' }}>{unknown}</p>
-                <p style={styles.summaryLabel}>Unknown</p>
-              </div>
+              <div style={styles.summaryBox}><p style={{ ...styles.summaryNum, color: '#c0392b' }}>{unknown}</p><p style={styles.summaryLabel}>Unknown</p></div>
               <div style={styles.summaryDivider} />
-              <div style={styles.summaryBox}>
-                <p style={{ ...styles.summaryNum, color: '#6b8f71' }}>
-                  {totalCards > 0 ? Math.round((known / totalCards) * 100) : 0}%
-                </p>
-                <p style={styles.summaryLabel}>Score</p>
-              </div>
+              <div style={styles.summaryBox}><p style={{ ...styles.summaryNum, color: '#6b8f71' }}>{totalCards > 0 ? Math.round((known / totalCards) * 100) : 0}%</p><p style={styles.summaryLabel}>Score</p></div>
             </div>
             <div style={styles.modalBtns}>
               <button style={styles.saveBtn} onClick={handleRestart}>Study Again</button>
