@@ -55,13 +55,41 @@ describe('FlashcardList', () => {
           json: () => Promise.resolve(cardDuplicate),
         } as Response);
       }
-      if (url.includes('/collections/42/flashcards')) {
-        expect(init?.method).toBe('GET');
+      if (url.includes('/users/me')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ username: 'tester' }),
+        } as Response);
+      }
+      if (url.includes('/flashcards/flagged')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve([]),
+        } as Response);
+      }
+      if (url.includes('/collections/42/flashcards') && !url.includes('flagged')) {
         return Promise.resolve({
           ok: true,
           status: 200,
           json: () => Promise.resolve([cardA]),
         } as Response);
+      }
+      try {
+        const pathname = new URL(url).pathname;
+        if (pathname === '/api/v1/collections') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () =>
+              Promise.resolve([
+                { collectionID: 42, collectionName: 'Test Deck', visibility: 'private' },
+              ]),
+          } as Response);
+        }
+      } catch {
+        /* ignore */
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     }) as jest.Mock;
