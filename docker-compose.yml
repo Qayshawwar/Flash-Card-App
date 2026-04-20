@@ -45,7 +45,7 @@ services:
       DB_POOL_MIN: ${DEV_DB_POOL_MIN}
       DB_POOL_MAX: ${DEV_DB_POOL_MAX}
     ports:
-      - "5000:5000"
+      - "5000:${DEV_BACKEND_PORT}"
     volumes:
       - ./backend:/app
       - backend_node_modules:/app/node_modules

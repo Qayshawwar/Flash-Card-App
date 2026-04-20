@@ -45,7 +45,7 @@ services:
       DB_POOL_MIN: ${STAGE_DB_POOL_MIN}
       DB_POOL_MAX: ${STAGE_DB_POOL_MAX}
     ports:
-      - "5002:5000"
+      - "5002:${STAGE_BACKEND_PORT}"
 
   frontend:
     build:
