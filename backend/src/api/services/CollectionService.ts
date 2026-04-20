@@ -62,6 +62,15 @@ class CollectionService {
         return { rows, count, totalPages: Math.ceil(count / limit) };
     }
 
+    // Collection is fetched by ID here rather than passed from the controller because
+    // public routes bypass CAM — there is no middleware to pre-load req.collection.
+    // Used by PublicCollectionMiddleware. Should do the same for other middlewares. TODO
+    async getPublicCollectionById(id: number): Promise<Collection> {
+        const collection = await CollectionRepository.findCollectionById(id);
+        if (!collection || collection.visibility !== 'public') throw new CollectionNotFoundError();
+        return collection;
+    }
+
     async create(data: CollectionCreationAttributes): Promise<Collection> {
         // FR-12: create new collection.
         const collectionName = data.collectionName.trim().toLowerCase();

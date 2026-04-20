@@ -16,6 +16,14 @@ class CollectionController {
         }
     }
 
+    async getPublicCollectionById(req: Request, res: Response, next: NextFunction) {
+        try {
+            res.status(200).json(req.collection!);
+        } catch (err) {
+            next(err);
+        }
+    }
+
     async getAll(req: Request, res: Response, next: NextFunction) {
         try {
             const collections = await CollectionService.getAllCollectionsByUser(req.userdata!.userID);

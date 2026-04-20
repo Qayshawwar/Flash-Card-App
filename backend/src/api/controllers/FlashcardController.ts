@@ -15,6 +15,15 @@ class FlashcardController {
         }
     }
 
+    async getAllFlashcardsFromPublicCollection(req: Request, res: Response, next: NextFunction) {
+        try {
+            const flashcards = await FlashcardService.getAllByCollection(req.collection!.userID, req.collection!);
+            res.status(200).json(flashcards);
+        } catch (err) {
+            next(err);
+        }
+    }
+
     async getFlagged(req: Request, res: Response, next: NextFunction) {
         try {
             const flashcards = await FlashcardService.getFlagged(req.userdata!.userID, req.collection!);
