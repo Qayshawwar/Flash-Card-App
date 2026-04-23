@@ -88,11 +88,9 @@ class UserService {
         await UserRepository.updateSettings(userID, data);
     }
 
-    async deleteAccount(userID: number, password: string): Promise<DeleteAccountResult> {
+    async deleteAccount(userID: number, email: string, password: string): Promise<DeleteAccountResult> {
         // FR-09: require password confirmation before deleting the authenticated account.
-        const profile = await this.getUserOrThrow(userID);
-
-        const fullUser = await UserRepository.findUserByEmail(profile.email);
+        const fullUser = await UserRepository.findUserByEmail(email);
         if (!fullUser) {
             throw new AppError('User not found.', 404);
         }
