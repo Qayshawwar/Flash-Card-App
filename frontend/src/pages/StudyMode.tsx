@@ -1,4 +1,4 @@
-// Study Mode Page - UC4 (Study/self-grade), UC9 (Pause session - Halema's component)
+// Study Mode Page - UC4 (Study/self-grade), UC9 (Pause session -  component)
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -21,7 +21,6 @@ interface Flashcard {
   answer: string;
 }
 
-const shuffle = (arr: Flashcard[]) => [...arr].sort(() => Math.random() - 0.5);
 
 export default function StudyMode() {
   const navigate = useNavigate();
@@ -42,6 +41,8 @@ export default function StudyMode() {
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [pauseError, setPauseError] = useState<string | null>(null);
   const [responses, setResponses] = useState<Array<{flashcardID: number, responseType: 'known' | 'unknown'}>>([]);
+  const [answerError, setAnswerError] = useState<string | null>(null);
+  const [grading, setGrading] = useState(false);
 
   const getAuthHeaders = (): HeadersInit => bearerAuthHeaders();
 
@@ -69,31 +70,26 @@ export default function StudyMode() {
     setResponses([]);
   }, [responses, collectionId, sessionId]);
 
-  const startSession = useCallback(() => {
+  const startSession = useCallback((fetchedCards: Flashcard[]) => {
     fetch(`${API_BASE}/api/v1/collections/${collectionId}/study-sessions`, {
       method: 'POST',
       headers: getAuthHeaders(),
     })
       .then(res => res.json())
-      .then(data => { if (data.sessionID) setSessionId(data.sessionID); })
-      .catch(() => {});
-  }, [collectionId]);
-
-  const checkActiveSession = useCallback(() => {
-    fetch(`${API_BASE}/api/v1/collections/${collectionId}/study-sessions/active`, {
-      headers: getAuthHeaders(),
-    })
-      .then(res => res.json())
       .then(data => {
-        if (data && data.sessionID) {
-          setSessionId(data.sessionID);
-          // Note: currentIndex not restored from backend
-        } else {
-          startSession();
+        if (data.session?.sessionID) setSessionId(data.session.sessionID);
+        if (typeof data.session?.currentIndex === 'number') setCurrentIndex(data.session.currentIndex);
+        const cardOrder: number[] = Array.isArray(data.cardOrder) ? data.cardOrder : [];
+        if (cardOrder.length > 0) {
+          const cardMap = new Map(fetchedCards.map(c => [c.flashcardID, c]));
+          const ordered = cardOrder
+            .map(id => cardMap.get(id))
+            .filter((c): c is Flashcard => c !== undefined);
+          if (ordered.length > 0) setCards(ordered);
         }
       })
-      .catch(() => startSession());
-  }, [collectionId, startSession]);
+      .catch(() => {});
+  }, [collectionId]);
 
   const pauseSession = useCallback(() => {
     if (!sessionId) {
@@ -131,30 +127,142 @@ export default function StudyMode() {
   }, [collectionId, sessionId]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/v1/collections/${collectionId}/flashcards?t=${Date.now()}`, { headers: getAuthHeaders() })
-      .then(res => res.json())
-      .then(data => {
-        const shuffled = shuffle(Array.isArray(data) && data.length > 0 ? data : []);
-        setCards(shuffled);
-        setLoading(false);
-        const savedSession = localStorage.getItem(`studySession_${collectionId}`);
-        if (savedSession) {
-          const saved = JSON.parse(savedSession);
-          setCurrentIndex(saved.currentIndex);
-          localStorage.removeItem(`studySession_${collectionId}`);
-        }
-        if (shuffled.length > 0) checkActiveSession();
-      })
-      .catch(() => { setCards([]); setLoading(false); });
+    let cancelled = false;
 
+    const initialize = async () => {
+      // 1 — fetch all flashcards for this collection
+      let fetchedCards: Flashcard[] = [];
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/v1/collections/${collectionId}/flashcards`,
+          { headers: getAuthHeaders() }
+        );
+        const data = await res.json();
+        fetchedCards = Array.isArray(data) && data.length > 0 ? data : [];
+      } catch {
+        if (!cancelled) { setCards([]); setLoading(false); }
+        return;
+      }
+
+      if (!fetchedCards.length) {
+        if (!cancelled) { setCards([]); setLoading(false); }
+        return;
+      }
+
+      if (cancelled) return;
+
+      // 2 — check whether a resumable session already exists
+      let activeSession: { sessionID: number; currentIndex: number } | null = null;
+      try {
+        const activeRes = await fetch(
+          `${API_BASE}/api/v1/collections/${collectionId}/study-sessions/active`,
+          { headers: getAuthHeaders() }
+        );
+        const activeData = await activeRes.json().catch(() => null);
+        if (activeData && typeof activeData.sessionID === 'number') {
+          activeSession = activeData;
+        }
+      } catch { /* treat as no active session */ }
+
+      // If every card in the deck has already been answered, the session is finished but was
+      // never formally closed. Complete it now so POST can create a fresh session below.
+      if (activeSession && activeSession.currentIndex >= fetchedCards.length) {
+        try {
+          await fetch(
+            `${API_BASE}/api/v1/collections/${collectionId}/study-sessions/${activeSession.sessionID}/complete`,
+            { method: 'PATCH', headers: getAuthHeaders() }
+          );
+        } catch { /* best-effort; POST will still create a new session */ }
+        activeSession = null;
+      }
+
+      if (cancelled) return;
+
+      // 3 — two separate paths:
+      //   RESUME  (activeSession != null): POST returns the existing session and its stored
+      //           cardOrder without creating a new session.
+      //   NEW     (activeSession == null): POST creates a fresh session beginning at index 0.
+      let sessionPayload: any = null;
+      try {
+        const startRes = await fetch(
+          `${API_BASE}/api/v1/collections/${collectionId}/study-sessions`,
+          { method: 'POST', headers: getAuthHeaders() }
+        );
+        sessionPayload = await startRes.json();
+      } catch { /* session could not be initialised; grading will be blocked */ }
+
+      if (cancelled) return;
+
+      // 3.5 — for a resumed session, fetch the summary to restore known/unknown counts.
+      //       The StudySession model has no known/unknown fields; they are computed from
+      //       the individual answer rows via the summary endpoint.
+      let resumedKnown = 0;
+      let resumedUnknown = 0;
+      if (activeSession !== null) {
+        const resumedId = sessionPayload?.session?.sessionID ?? activeSession.sessionID;
+        try {
+          const summaryRes = await fetch(
+            `${API_BASE}/api/v1/collections/${collectionId}/study-sessions/${resumedId}/summary`,
+            { headers: getAuthHeaders() }
+          );
+          const summaryData = await summaryRes.json().catch(() => null);
+          if (summaryData && typeof summaryData.known === 'number') resumedKnown = summaryData.known;
+          if (summaryData && typeof summaryData.unknown === 'number') resumedUnknown = summaryData.unknown;
+        } catch { /* leave counts at 0 on network failure */ }
+      }
+
+      if (cancelled) return;
+
+      // 4 — order cards using the cardOrder from the session response
+      const cardOrder: number[] = Array.isArray(sessionPayload?.cardOrder) ? sessionPayload.cardOrder : [];
+      let orderedCards = fetchedCards;
+      if (cardOrder.length > 0) {
+        const cardMap = new Map(fetchedCards.map(c => [c.flashcardID, c]));
+        const mapped = cardOrder
+          .map((id: number) => cardMap.get(id))
+          .filter((c): c is Flashcard => c !== undefined);
+        if (mapped.length > 0) orderedCards = mapped;
+      }
+
+      // 5 — resolve session identity.
+      //     RESUME path: prefer POST response; fall back to GET /active data if POST failed.
+      //     NEW path:    activeSession is null, so all data must come from POST.
+      const sessionSource = sessionPayload?.session ?? activeSession;
+
+      // 6 — clamp the restored index to a valid position.
+      //     If the server index equals orderedCards.length, all cards were already answered
+      //     in a previous run — jump straight to the complete screen instead of crashing.
+      const serverIndex: number = sessionSource?.currentIndex ?? 0;
+      const alreadyFinished = serverIndex >= orderedCards.length && orderedCards.length > 0;
+      const safeIndex = alreadyFinished
+        ? orderedCards.length - 1
+        : Math.min(serverIndex, Math.max(0, orderedCards.length - 1));
+
+      // 7 — commit all state atomically; loading gate stays up until this point
+      setCards(orderedCards);
+      if (sessionSource?.sessionID) setSessionId(sessionSource.sessionID);
+      setCurrentIndex(safeIndex);
+      setKnown(resumedKnown);
+      setUnknown(resumedUnknown);
+      if (alreadyFinished) setIsComplete(true);
+      setLoading(false);
+    };
+
+    void initialize();
+
+    // Collection name is non-blocking and does not affect the loading gate
     fetch(`${API_BASE}/api/v1/collections`, { headers: getAuthHeaders() })
       .then(res => res.json())
       .then(data => {
-        const col = Array.isArray(data) ? data.find((c: any) => c.collectionID === Number(collectionId)) : null;
-        if (col) setCollectionName(col.collectionName);
+        if (!cancelled) {
+          const col = Array.isArray(data) ? data.find((c: any) => c.collectionID === Number(collectionId)) : null;
+          if (col) setCollectionName(col.collectionName);
+        }
       })
       .catch(() => {});
-  }, [collectionId, checkActiveSession]);
+
+    return () => { cancelled = true; };
+  }, [collectionId]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -178,16 +286,22 @@ export default function StudyMode() {
 
   const totalCards = cards.length;
   const currentCard = cards[currentIndex];
+  
   const progress = totalCards > 0 ? Math.round((currentIndex / totalCards) * 100) : 0;
  
-  const recordAnswer = (flashcardID: number, correct: boolean) => {
-  if (!sessionId) return;
-  fetch(`${API_BASE}/api/v1/collections/${collectionId}/study-sessions/${sessionId}/answers`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ flashcardID, responseType: correct ? 'known' : 'unknown' }),
-  }).catch(() => {});
-};
+  const recordAnswer = async (flashcardID: number, correct: boolean): Promise<boolean> => {
+    if (!sessionId) return false;
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/collections/${collectionId}/study-sessions/${sessionId}/answers`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ flashcardID, responseType: correct ? 'known' : 'unknown' }),
+      });
+      return res.status === 204;
+    } catch {
+      return false;
+    }
+  };
  
   const completeSession = useCallback(async () => {
     if (!sessionId) return;
@@ -203,20 +317,33 @@ export default function StudyMode() {
     else { setCurrentIndex(currentIndex + 1); setIsFlipped(false); }
   };
 
-  const handleKnown = () => {
- 
-    recordAnswer(currentCard.flashcardID, true);
- 
+  const handleKnown = async () => {
+    setGrading(true);
+    setAnswerError(null);
+    const ok = await recordAnswer(currentCard.flashcardID, true);
+    if (!ok) {
+      setAnswerError('Failed to save your answer. Please try again.');
+      setGrading(false);
+      return;
+    }
     setResponses(prev => [...prev, { flashcardID: currentCard.flashcardID, responseType: 'known' }]);
     setKnown(known + 1);
+    setGrading(false);
     advance(true);
   };
-  const handleUnknown = () => {
-   
-    recordAnswer(currentCard.flashcardID, false);
- 
+
+  const handleUnknown = async () => {
+    setGrading(true);
+    setAnswerError(null);
+    const ok = await recordAnswer(currentCard.flashcardID, false);
+    if (!ok) {
+      setAnswerError('Failed to save your answer. Please try again.');
+      setGrading(false);
+      return;
+    }
     setResponses(prev => [...prev, { flashcardID: currentCard.flashcardID, responseType: 'unknown' }]);
     setUnknown(unknown + 1);
+    setGrading(false);
     advance(false);
   };
 
@@ -225,7 +352,7 @@ export default function StudyMode() {
     setUnknown(0); setIsComplete(false); setSessionId(null);
     setResponses([]);
     localStorage.removeItem(`studySession_${collectionId}`);
-    startSession();
+    startSession(cards);
   };
 
   const handleLogout = () => {
@@ -245,6 +372,8 @@ export default function StudyMode() {
       </div>
     </div>
   );
+
+  if (!currentCard) return null;
 
   return (
     <div style={styles.page}>
@@ -287,10 +416,25 @@ export default function StudyMode() {
           </div>
         </div>
         {isFlipped && (
-          <div style={styles.gradeRow}>
-            <button style={styles.unknownBtn} onClick={handleUnknown}>✗ Didn't Know</button>
-            <button style={styles.knownBtn} onClick={handleKnown}>✓ Got It</button>
-          </div>
+          <React.Fragment>
+            <div style={styles.gradeRow}>
+              <button
+                style={{ ...styles.unknownBtn, opacity: grading ? 0.6 : 1 }}
+                onClick={handleUnknown}
+                disabled={grading}
+              >✗ Didn't Know</button>
+              <button
+                style={{ ...styles.knownBtn, opacity: grading ? 0.6 : 1 }}
+                onClick={handleKnown}
+                disabled={grading}
+              >✓ Got It</button>
+            </div>
+            {answerError && (
+              <p style={{ color: '#e74c3c', textAlign: 'center', fontFamily: 'sans-serif', fontSize: '13px', marginTop: '12px' }}>
+                {answerError}
+              </p>
+            )}
+          </React.Fragment>
         )}
       </div>
 
