@@ -1,0 +1,7 @@
+[
+  { "question": "What is the capital of France?", "answer": "Paris" },
+  { "question": "What is 2 + 2?", "answer": "4" },
+  { "question": "What language is TypeScript based on?", "answer": "JavaScript" },
+  { "question": "What does HTTP stand for?", "answer": "HyperText Transfer Protocol" },
+  { "question": "What is the powerhouse of the cell?", "answer": "Mitochondria" }
+]
